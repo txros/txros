@@ -255,25 +255,4 @@ if __name__ == '__main__':
         pass#print msg
     nh.subscribe('point', PointStamped, cb)
     
-    import gc
-    gc.set_debug(gc.DEBUG_SAVEALL)
-    printed = set()
-    def a():
-        print 'collect'
-        gc.collect()
-        for x in gc.garbage:
-            if id(x) not in printed:
-                print 'CYCLIC:'
-                print x
-                print
-                print gc.get_referents(x)
-                print
-                print [y for y in gc.get_referrers(x) if y is not gc.garbage]
-                print
-                print
-                print
-                printed.add(id(x))
-        reactor.callLater(1, a)
-    a()
-    
     reactor.run()
