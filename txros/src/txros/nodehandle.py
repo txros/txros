@@ -69,7 +69,7 @@ class TCPROSServer(basic.IntNStringReceiver):
     def stringReceived(self, string):
         header = deserialize_dict(string)
         if 'service' in header:
-            self.stringReceived = self._node_handle._tcpros_handlers[header['service']](header, self)
+            self.stringReceived = self._node_handle._tcpros_handlers['service', header['service']](header, self)
         else:
             assert False
 
@@ -151,8 +151,8 @@ class Service(object):
         self._type = service_type
         self._callback = callback
         
-        assert self._name not in node_handle._tcpros_handlers
-        node_handle._tcpros_handlers[self._name] = self._handle_tcpros_conn
+        assert ('service', self._name) not in node_handle._tcpros_handlers
+        node_handle._tcpros_handlers['service', self._name] = self._handle_tcpros_conn
         
         node_handle._proxy.callRemote('registerService',
             node_handle._name, self._name,
