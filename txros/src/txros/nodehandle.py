@@ -27,17 +27,13 @@ class Server(xmlrpc.XMLRPC):
     '''
     An example object to be published.
     '''
-    
-    def __getattr__(self, attr):
-        print attr
-        return object.__getattr__(self, attr)
-    
-    def __getattribute__(self, attr):
-        print attr
-        return object.__getattribute__(self, attr)
+    def __init__(self, node_handle):
+        xmlrpc.XMLRPC.__init__(self)
+        self._node_handle = node_handle
     
     def xmlrpc_publisherUpdate(self, caller_id, topic, publishers):
-        print locals()
+        #print locals()
+        self._node_handle._server_handlers[topic](publishers)
         #raise xmlrpc.Fault(123, 'The fault procedure is faulty.')
 
 def deserialize_list(s):
@@ -124,6 +120,7 @@ class NodeHandle(object):
         
         self._server = reactor.listenTCP(0, server.Site(Server(self)))
         self._server_uri = 'http://%s:%i/' % (self._addr, self._server.getHost().port)
+        self._server_handlers = {}
         
         self._tcpros_server = reactor.listenTCP(0, AutoServerFactory(TCPROSServer, self))
         self._tcpros_server_uri = 'rosrpc://%s:%i' % (self._addr, self._tcpros_server.getHost().port)
@@ -169,12 +166,12 @@ class Service(object):
             request_type=self._type._request_class._type,
             response_type=self._type._response_class._type,
         )))
-        @defer.inlineCallbacks
+        @util.inlineCallbacks
         def more(string):
             req = self._type._request_class().deserialize(string)
             try:
                 resp = yield self._callback(req)
-            except Exception, e:
+            except Exception as e:
                 traceback.print_exc()
                 conn.transport.write(chr(0)) # ew
                 conn.sendString(str(e))
@@ -196,41 +193,52 @@ class Subscriber(object):
         
         self._publisher_threads = {}
         
-        @defer.inlineCallbacks
+        assert self._name not in node_handle._server_handlers
+        node_handle._server_handlers[self._name] = self._handle_publisher_list
+        
+        @util.inlineCallbacks
         def reg():
-            res = yield node_handle._proxy.callRemote('registerSubscriber',
+            statusCode, statusMessage, value = yield node_handle._proxy.callRemote('registerSubscriber',
                 node_handle._name, self._name,
                 self._type._type, node_handle._server_uri)
-            # XXX check res
-            self._handle_publisher_list(res[2])
+            assert statusCode == 1
+            
+            self._handle_publisher_list(value)
         reg()
     
-    @defer.inlineCallbacks
+    @util.inlineCallbacks
     def _publisher_thread(self, url):
-        while True:
-            try:
-                proxy = xmlrpc.Proxy(url)
-                statusCode, statusMessage, value = yield proxy.callRemote('requestTopic', self._node_handle._name, self._name, [['TCPROS']])
-                assert statusCode == 1
+        try:
+            while True:
+                try:
+                    proxy = xmlrpc.Proxy(url)
+                    statusCode, statusMessage, value = yield proxy.callRemote('requestTopic', self._node_handle._name, self._name, [['TCPROS']])
+                    assert statusCode == 1
+                    
+                    protocol, host, port = value
+                    conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(AutoServerFactory(TCPROSClient))
+                    try:
+                        conn.sendString(serialize_dict(dict(
+                            message_definition=self._type._full_text,
+                            callerid=self._node_handle._name,
+                            topic=self._name,
+                            md5sum=self._type._md5sum,
+                            type=self._type._type,
+                        )))
+                        header = deserialize_dict((yield conn.queue.get_next()))
+                        # XXX do something with header
+                        while True:
+                            data = yield conn.queue.get_next()
+                            msg = self._type().deserialize(data)
+                            self._callback(msg)
+                    finally:
+                        conn.transport.loseConnection()
+                except Exception:
+                    traceback.print_exc()
                 
-                conn = yield endpoints.TCP4ClientEndpoint(reactor, value[1], value[2]).connect(AutoServerFactory(TCPROSClient))
-                conn.sendString(serialize_dict(dict(
-                    message_definition=self._type._full_text,
-                    callerid=self._node_handle._name,
-                    topic=self._name,
-                    md5sum=self._type._md5sum,
-                    type=self._type._type,
-                )))
-                header = deserialize_dict((yield conn.queue.get_next()))
-                # XXX do something with header
-                while True:
-                    data = yield conn.queue.get_next()
-                    msg = self._type().deserialize(data)
-                    self._callback(msg)
-            except:
-                traceback.print_exc()
-            
-            yield util.sleep(1)
+                yield util.sleep(1)
+        finally:
+            print url, 'EXITED'
     
     def _handle_publisher_list(self, publishers):
         new = dict((k, self._publisher_threads[k] if k in self._publisher_threads else self._publisher_thread(k)) for k in publishers)
@@ -244,7 +252,28 @@ if __name__ == '__main__':
     
     from geometry_msgs.msg import PointStamped
     def cb(msg):
-        print msg
+        pass#print msg
     nh.subscribe('point', PointStamped, cb)
+    
+    import gc
+    gc.set_debug(gc.DEBUG_SAVEALL)
+    printed = set()
+    def a():
+        print 'collect'
+        gc.collect()
+        for x in gc.garbage:
+            if id(x) not in printed:
+                print 'CYCLIC:'
+                print x
+                print
+                print gc.get_referents(x)
+                print
+                print [y for y in gc.get_referrers(x) if y is not gc.garbage]
+                print
+                print
+                print
+                printed.add(id(x))
+        reactor.callLater(1, a)
+    a()
     
     reactor.run()
