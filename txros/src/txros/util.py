@@ -1,6 +1,7 @@
 from __future__ import division
 
 import traceback
+import weakref
 
 import numpy
 from twisted.internet import threads, defer, reactor
@@ -55,18 +56,20 @@ def inlineCallbacks(f):
     @wraps(f)
     def _(*args, **kwargs):
         gen = f(*args, **kwargs)
+        gen_weakref = weakref.ref(gen)
         stop_running = [False]
         def cancelled(df_):
-            assert df_ is df
+            #assert df_ is df
             stop_running[0] = True
             if currently_waiting_on:
-                currently_waiting_on[0].cancel()
-                try:
-                    gen.throw(GeneratorExit) # GC will eventually get it, but move things along...
-                except GeneratorExit:
-                    pass
-                except:
-                    traceback.print_exc()
+                currently_waiting_on[0]().cancel()
+                if gen_weakref:
+                    try:
+                        gen_weakref().throw(GeneratorExit) # GC will eventually get it, but move things along...
+                    except GeneratorExit:
+                        pass
+                    except:
+                        traceback.print_exc()
         df = defer.Deferred(cancelled)
         currently_waiting_on = []
         def it(cur):
@@ -92,9 +95,9 @@ def inlineCallbacks(f):
                             cur = res2
                             continue
                         else:
-                            currently_waiting_on[:] = [res]
+                            currently_waiting_on[:] = [weakref.ref(res)]
                             def gotResult(res2):
-                                assert currently_waiting_on[0] is res
+                                #assert currently_waiting_on[0]() is res
                                 currently_waiting_on[:] = []
                                 if stop_running[0]:
                                     return
