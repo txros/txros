@@ -1,11 +1,11 @@
+from __future__ import division
+
 import os
-import struct
 import traceback
 import StringIO
 
 from twisted.web import server, xmlrpc
-from twisted.internet import defer, protocol, reactor, endpoints, error
-from twisted.protocols import basic
+from twisted.internet import defer, reactor, endpoints, error
 
 from roscpp.srv import GetLoggers, GetLoggersResponse, SetLoggerLevel, SetLoggerLevelResponse
 
