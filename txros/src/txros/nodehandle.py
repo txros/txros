@@ -4,7 +4,7 @@ import traceback
 import StringIO
 
 from twisted.web import server, xmlrpc
-from twisted.internet import defer, protocol, reactor, endpoints
+from twisted.internet import defer, protocol, reactor, endpoints, error
 from twisted.protocols import basic
 
 from roscpp.srv import GetLoggers, GetLoggersResponse, SetLoggerLevel, SetLoggerLevelResponse
@@ -208,43 +208,42 @@ class Subscriber(object):
     
     @util.inlineCallbacks
     def _publisher_thread(self, url):
-        try:
-            while True:
-                try:
-                    proxy = xmlrpc.Proxy(url)
-                    statusCode, statusMessage, value = yield proxy.callRemote('requestTopic', self._node_handle._name, self._name, [['TCPROS']])
-                    assert statusCode == 1
-                    
-                    protocol, host, port = value
-                    conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(AutoServerFactory(TCPROSClient))
-                    try:
-                        conn.sendString(serialize_dict(dict(
-                            message_definition=self._type._full_text,
-                            callerid=self._node_handle._name,
-                            topic=self._name,
-                            md5sum=self._type._md5sum,
-                            type=self._type._type,
-                        )))
-                        header = deserialize_dict((yield conn.queue.get_next()))
-                        # XXX do something with header
-                        while True:
-                            data = yield conn.queue.get_next()
-                            msg = self._type().deserialize(data)
-                            self._callback(msg)
-                    finally:
-                        conn.transport.loseConnection()
-                except Exception:
-                    traceback.print_exc()
+        while True:
+            try:
+                proxy = xmlrpc.Proxy(url)
+                statusCode, statusMessage, value = yield proxy.callRemote('requestTopic', self._node_handle._name, self._name, [['TCPROS']])
+                assert statusCode == 1
                 
-                yield util.sleep(1)
-        finally:
-            print url, 'EXITED'
+                protocol, host, port = value
+                conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(AutoServerFactory(TCPROSClient))
+                try:
+                    conn.sendString(serialize_dict(dict(
+                        message_definition=self._type._full_text,
+                        callerid=self._node_handle._name,
+                        topic=self._name,
+                        md5sum=self._type._md5sum,
+                        type=self._type._type,
+                    )))
+                    header = deserialize_dict((yield conn.queue.get_next()))
+                    # XXX do something with header
+                    while True:
+                        data = yield conn.queue.get_next()
+                        msg = self._type().deserialize(data)
+                        self._callback(msg)
+                finally:
+                    conn.transport.loseConnection()
+            except (error.ConnectionDone, error.ConnectionLost):
+                pass
+            except Exception:
+                traceback.print_exc()
+            
+            yield util.sleep(1)
     
     def _handle_publisher_list(self, publishers):
         new = dict((k, self._publisher_threads[k] if k in self._publisher_threads else self._publisher_thread(k)) for k in publishers)
         for k, v in self._publisher_threads.iteritems():
-            print 'canceling', k
             v.cancel()
+            v.addErrback(lambda fail: fail.trap(defer.CancelledError))
         self._publisher_threads = new
 
 if __name__ == '__main__':
@@ -252,7 +251,7 @@ if __name__ == '__main__':
     
     from geometry_msgs.msg import PointStamped
     def cb(msg):
-        pass#print msg
+        print msg
     nh.subscribe('point', PointStamped, cb)
     
     reactor.run()
