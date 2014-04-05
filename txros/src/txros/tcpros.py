@@ -40,6 +40,8 @@ class Server(basic.IntNStringReceiver):
         header = deserialize_dict(string)
         if 'service' in header:
             self.stringReceived = self._node_handle._tcpros_handlers['service', header['service']](header, self)
+        elif 'topic' in header:
+            self.stringReceived = self._node_handle._tcpros_handlers['topic', header['topic']](header, self)
         else:
             assert False
 
