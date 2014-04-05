@@ -11,17 +11,6 @@ from roscpp.srv import GetLoggers, GetLoggersResponse, SetLoggerLevel, SetLogger
 
 from txros import util
 
-class AutoServerFactory(protocol.ServerFactory):
-    def __init__(self, protocol, *args, **kwargs):
-        self.protocol = protocol
-        self.protocol_args = args
-        self.protocol_kwargs = kwargs
-    
-    def buildProtocol(self, addr):
-        p = self.protocol(*self.protocol_args, **self.protocol_kwargs)
-        p.factory = self
-        return p
-
 
 class Server(xmlrpc.XMLRPC):
     '''
@@ -100,7 +89,7 @@ class NodeHandle(object):
         self._server_uri = 'http://%s:%i/' % (self._addr, self._server.getHost().port)
         self._server_handlers = {}
         
-        self._tcpros_server = reactor.listenTCP(0, AutoServerFactory(TCPROSServer, self))
+        self._tcpros_server = reactor.listenTCP(0, util.AutoServerFactory(TCPROSServer, self))
         self._tcpros_server_uri = 'rosrpc://%s:%i' % (self._addr, self._tcpros_server.getHost().port)
         self._tcpros_handlers = {}
         
@@ -193,7 +182,7 @@ class Subscriber(object):
                 assert statusCode == 1
                 
                 protocol, host, port = value
-                conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(AutoServerFactory(TCPROSClient))
+                conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(util.AutoServerFactory(TCPROSClient))
                 try:
                     conn.sendString(serialize_dict(dict(
                         message_definition=self._type._full_text,

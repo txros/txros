@@ -4,7 +4,7 @@ import traceback
 import weakref
 
 import numpy
-from twisted.internet import threads, defer, reactor
+from twisted.internet import threads, defer, reactor, protocol
 from twisted.python import failure
 
 import rospy
@@ -132,3 +132,14 @@ class DeferredQueue(object):
         else:
             self._df = res
         return res
+
+class AutoServerFactory(protocol.ServerFactory):
+    def __init__(self, protocol, *args, **kwargs):
+        self.protocol = protocol
+        self.protocol_args = args
+        self.protocol_kwargs = kwargs
+    
+    def buildProtocol(self, addr):
+        p = self.protocol(*self.protocol_args, **self.protocol_kwargs)
+        p.factory = self
+        return p
