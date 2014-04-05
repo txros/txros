@@ -110,3 +110,25 @@ def inlineCallbacks(f):
         it(None)
         return df
     return _
+
+class DeferredQueue(object):
+    def __init__(self):
+        self._df = None
+        self._queue = []
+    
+    def add(self, item):
+        if self._df is not None:
+            df = self._df
+            self._df = None
+            df.callback(item)
+        else:
+            self._queue.append(item)
+    
+    def get_next(self):
+        assert self._df is None
+        res = defer.Deferred()
+        if self._queue:
+            res.callback(self._queue.pop(0))
+        else:
+            self._df = res
+        return res

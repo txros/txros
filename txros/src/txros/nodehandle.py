@@ -73,35 +73,13 @@ class TCPROSServer(basic.IntNStringReceiver):
         else:
             assert False
 
-class Queue(object):
-    def __init__(self):
-        self._df = None
-        self._queue = []
-    
-    def add(self, item):
-        if self._df is not None:
-            df = self._df
-            self._df = None
-            df.callback(item)
-        else:
-            self._queue.append(item)
-    
-    def get_next(self):
-        assert self._df is None
-        res = defer.Deferred()
-        if self._queue:
-            res.callback(self._queue.pop(0))
-        else:
-            self._df = res
-        return res
-
 class TCPROSClient(basic.IntNStringReceiver):
     structFormat = '<I'
     prefixLength = struct.calcsize(structFormat)
     MAX_LENGTH = 2**32
     
     def __init__(self):
-        self.queue = Queue()
+        self.queue = util.DeferredQueue()
     
     def stringReceived(self, string):
         self.queue.add(string)
