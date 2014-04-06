@@ -247,13 +247,16 @@ class Subscriber(object):
 class Publisher(object):
     @classmethod
     @util.inlineCallbacks
-    def _create(cls, node_handle, name, message_type):
+    def _create(cls, node_handle, name, message_type, latching=False):
         self = cls()
         
         self._node_handle = node_handle
         self._name = node_handle.resolve_name(name)
         
         self._type = message_type
+        self._latching = latching
+        
+        self._last_message_data = None
         
         assert ('topic', self._name) not in node_handle._tcpros_handlers
         node_handle._tcpros_handlers['topic', self._name] = self._handle_tcpros_conn
@@ -287,8 +290,11 @@ class Publisher(object):
                 callerid=self._node_handle._name,
                 type=self._type._type,
                 md5sum=self._type._md5sum,
-                latching='0',
+                latching='1' if self._latching else '0',
             )))
+            
+            if self._latching and self._last_message_data is not None:
+                conn.sendString(self._last_message_data)
             
             self._connections.add(conn)
             try:
@@ -309,6 +315,9 @@ class Publisher(object):
         
         for conn in self._connections:
             conn.sendString(data)
+        
+        if self._latching:
+            self._last_message_data = data
 
 if __name__ == '__main__':
     nh = NodeHandle('testnode')
@@ -321,7 +330,7 @@ if __name__ == '__main__':
     @apply
     @util.inlineCallbacks
     def main():
-        pub = yield nh.advertise('point2', PointStamped)
+        pub = yield nh.advertise('point2', PointStamped, latching=True)
         def cb(msg):
             #print msg
             pub.publish(msg)
