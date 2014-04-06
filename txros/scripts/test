@@ -1,0 +1,28 @@
+#!/usr/bin/python
+
+import txros
+
+from geometry_msgs.msg import PointStamped
+
+
+nh = txros.NodeHandle('testnode')
+
+@repr
+@apply
+@util.inlineCallbacks
+def main():
+    pub = yield nh.advertise('point2', PointStamped, latching=True)
+    def cb(msg):
+        #print msg
+        pub.publish(msg)
+    nh.subscribe('point', PointStamped, cb)
+
+@repr
+@apply
+@util.inlineCallbacks
+def _():
+    while True:
+        yield util.sleep(1)
+        print (yield nh.get_param('/'))
+
+reactor.run()

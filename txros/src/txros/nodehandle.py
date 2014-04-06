@@ -318,30 +318,3 @@ class Publisher(object):
         
         if self._latching:
             self._last_message_data = data
-
-if __name__ == '__main__':
-    nh = NodeHandle('testnode')
-    
-    
-    
-    from geometry_msgs.msg import PointStamped
-    
-    @repr
-    @apply
-    @util.inlineCallbacks
-    def main():
-        pub = yield nh.advertise('point2', PointStamped, latching=True)
-        def cb(msg):
-            #print msg
-            pub.publish(msg)
-        nh.subscribe('point', PointStamped, cb)
-    
-    @repr
-    @apply
-    @util.inlineCallbacks
-    def _():
-        while True:
-            yield util.sleep(1)
-            print (yield nh.get_param('/'))
-    
-    reactor.run()
