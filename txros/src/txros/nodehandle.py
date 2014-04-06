@@ -70,6 +70,7 @@ class NodeHandle(object):
         else:
             return self._ns + '/' + name
     
+    
     def advertise_service(self, *args, **kwargs):
         return Service(self, *args, **kwargs)
     
@@ -79,8 +80,24 @@ class NodeHandle(object):
     def advertise(self, *args, **kwargs):
         return Publisher(self, *args, **kwargs)
     
+    
     def get_param(self, key):
         return self._proxy.getParam(key)
+    
+    def has_param(self, key):
+        return self._proxy.hasParam(key)
+    
+    def delete_param(self, key):
+        return self._proxy.deleteParam(key)
+    
+    def set_param(self, key, value):
+        return self._proxy.setParam(key, value)
+    
+    def search_param(self, key):
+        return self._proxy.searchParam(key)
+    
+    def get_param_names(self):
+        return self._proxy.getParamNames()
 
 class Service(object):
     def __init__(self, node_handle, name, service_type, callback):
