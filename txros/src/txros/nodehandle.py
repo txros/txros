@@ -27,6 +27,8 @@ class ROSXMLRPCError(Exception):
     def __init__(self, code, message):
         self.code = code
         self.message = message
+    def __str__(self):
+        return 'ROSXMLRPCError' + repr((self.code, self.message))
 class ROSXMLRPCProxy(object):
     def __init__(self, proxy, caller_id):
         self._proxy = proxy
@@ -47,6 +49,8 @@ class NodeHandle(object):
         self._ns = ''
         self._name = self._ns + '/' + name
         
+        self._shutdown_callbacks = []
+        
         self._proxy = ROSXMLRPCProxy(xmlrpc.Proxy(os.environ['ROS_MASTER_URI']), self._name)
         self._addr = '127.0.0.1' # XXX
         
@@ -61,6 +65,13 @@ class NodeHandle(object):
         
         self.advertise_service('~get_loggers', GetLoggers, lambda req: GetLoggersResponse())
         self.advertise_service('~set_logger_level', SetLoggerLevel, lambda req: SetLoggerLevelResponse())
+        
+        reactor.addSystemEventTrigger('before','shutdown', self.shutdown)
+    
+    @util.inlineCallbacks
+    def shutdown(self):
+        while self._shutdown_callbacks:
+            yield self._shutdown_callbacks.pop()()
     
     def resolve(self, name):
         if name.startswith('/'):
@@ -72,7 +83,7 @@ class NodeHandle(object):
     
     
     def advertise_service(self, *args, **kwargs):
-        return Service(self, *args, **kwargs)
+        return Service._create(self, *args, **kwargs)
     
     def subscribe(self, *args, **kwargs):
         return Subscriber(self, *args, **kwargs)
@@ -100,7 +111,11 @@ class NodeHandle(object):
         return self._proxy.getParamNames()
 
 class Service(object):
-    def __init__(self, node_handle, name, service_type, callback):
+    @classmethod
+    @util.inlineCallbacks
+    def _create(cls, node_handle, name, service_type, callback):
+        self = cls()
+        
         self._node_handle = node_handle
         self._name = node_handle.resolve(name)
         
@@ -110,7 +125,18 @@ class Service(object):
         assert ('service', self._name) not in node_handle._tcpros_handlers
         node_handle._tcpros_handlers['service', self._name] = self._handle_tcpros_conn
         
-        node_handle._proxy.registerService(self._name, node_handle._tcpros_server_uri, node_handle._xmlrpc_server_uri) # XXX yield on result
+        yield node_handle._proxy.registerService(self._name, node_handle._tcpros_server_uri, node_handle._xmlrpc_server_uri)
+        
+        self._node_handle._shutdown_callbacks.append(self.shutdown)
+        
+        defer.returnValue(self)
+    
+    def __init__(self):
+        pass
+    
+    @util.inlineCallbacks
+    def shutdown(self):
+        yield self._node_handle._proxy.unregisterService(self._name, self._node_handle._tcpros_server_uri)
     
     @util.inlineCallbacks
     def _handle_tcpros_conn(self, headers, conn):
