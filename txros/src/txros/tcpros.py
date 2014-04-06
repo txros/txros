@@ -33,17 +33,22 @@ class Server(basic.IntNStringReceiver):
     prefixLength = struct.calcsize(structFormat)
     MAX_LENGTH = 2**32
     
-    def __init__(self, node_handle):
-        self._node_handle = node_handle
+    def __init__(self, handlers):
+        self._handlers = handlers
+        self.queue = util.DeferredQueue()
     
     def stringReceived(self, string):
         header = deserialize_dict(string)
         if 'service' in header:
-            self.stringReceived = self._node_handle._tcpros_handlers['service', header['service']](header, self)
+            self._handlers['service', header['service']](header, self)
         elif 'topic' in header:
-            self.stringReceived = self._node_handle._tcpros_handlers['topic', header['topic']](header, self)
+            self._handlers['topic', header['topic']](header, self)
         else:
             assert False
+        self.stringReceived = self.queue.add
+    
+    def connectionLost(self, reason):
+        self.queue.add(reason) # reason is a Failure
 
 class Client(basic.IntNStringReceiver):
     structFormat = '<I'

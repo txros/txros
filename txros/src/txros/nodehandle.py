@@ -16,16 +16,16 @@ class Server(xmlrpc.XMLRPC):
     '''
     An example object to be published.
     '''
-    def __init__(self, node_handle):
+    def __init__(self, handlers):
         xmlrpc.XMLRPC.__init__(self)
-        self._node_handle = node_handle
+        self._handlers = handlers
     
     def xmlrpc_publisherUpdate(self, caller_id, topic, publishers):
-        return self._node_handle._server_handlers['publisherUpdate', topic](publishers)
+        return self._handlers['publisherUpdate', topic](publishers)
         #raise xmlrpc.Fault(123, 'The fault procedure is faulty.')
     
     def xmlrpc_requestTopic(self, caller_id, topic, protocols):
-        return self._node_handle._server_handlers['requestTopic', topic](protocols)
+        return self._handlers['requestTopic', topic](protocols)
 
 class NodeHandle(object):
     def __init__(self, name):
@@ -36,14 +36,14 @@ class NodeHandle(object):
         #self._proxy.callRemote('getParam', '/test', '/').addCallbacks(printValue, printError)
         self._addr = '127.0.0.1' # XXX
         
-        self._server = reactor.listenTCP(0, server.Site(Server(self)))
-        self._server_uri = 'http://%s:%i/' % (self._addr, self._server.getHost().port)
         self._server_handlers = {}
+        self._server = reactor.listenTCP(0, server.Site(Server(self._server_handlers)))
+        self._server_uri = 'http://%s:%i/' % (self._addr, self._server.getHost().port)
         
-        self._tcpros_server = reactor.listenTCP(0, util.AutoServerFactory(tcpros.Server, self))
+        self._tcpros_handlers = {}
+        self._tcpros_server = reactor.listenTCP(0, util.AutoServerFactory(tcpros.Server, self._tcpros_handlers))
         self._tcpros_server_uri = 'rosrpc://%s:%i' % (self._addr, self._tcpros_server.getHost().port)
         self._tcpros_server_addr = self._addr, self._tcpros_server.getHost().port
-        self._tcpros_handlers = {}
         
         self.advertise_service('~get_loggers', GetLoggers, lambda req: GetLoggersResponse())
         self.advertise_service('~set_logger_level', SetLoggerLevel, lambda req: SetLoggerLevelResponse())
@@ -80,30 +80,38 @@ class Service(object):
             node_handle._name, self._name,
             node_handle._tcpros_server_uri, node_handle._server_uri) # XXX check result
     
+    @util.inlineCallbacks
     def _handle_tcpros_conn(self, headers, conn):
-        conn.sendString(tcpros.serialize_dict(dict(
-            callerid=self._node_handle._name,
-            type=self._type._type,
-            md5sum=self._type._md5sum,
-            request_type=self._type._request_class._type,
-            response_type=self._type._response_class._type,
-        )))
-        @util.inlineCallbacks
-        def more(string):
-            req = self._type._request_class().deserialize(string)
-            try:
-                resp = yield self._callback(req)
-            except Exception as e:
-                traceback.print_exc()
-                conn.transport.write(chr(0)) # ew
-                conn.sendString(str(e))
-            else:
-                assert isinstance(resp, self._type._response_class)
-                conn.transport.write(chr(1)) # ew
-                x = StringIO.StringIO()
-                resp.serialize(x)
-                conn.sendString(x.getvalue())
-        return more
+        try:
+            # check headers
+            
+            conn.sendString(tcpros.serialize_dict(dict(
+                callerid=self._node_handle._name,
+                type=self._type._type,
+                md5sum=self._type._md5sum,
+                request_type=self._type._request_class._type,
+                response_type=self._type._response_class._type,
+            )))
+            
+            while True:
+                string = yield conn.queue.get_next()
+                req = self._type._request_class().deserialize(string)
+                try:
+                    resp = yield self._callback(req)
+                except Exception as e:
+                    traceback.print_exc()
+                    conn.transport.write(chr(0)) # ew
+                    conn.sendString(str(e))
+                else:
+                    assert isinstance(resp, self._type._response_class)
+                    conn.transport.write(chr(1)) # ew
+                    x = StringIO.StringIO()
+                    resp.serialize(x)
+                    conn.sendString(x.getvalue())
+        except (error.ConnectionDone, error.ConnectionLost):
+            pass
+        finally:
+            conn.transport.loseConnection()
 
 class Subscriber(object):
     def __init__(self, node_handle, name, message_type, callback):
@@ -190,18 +198,29 @@ class Publisher(object):
     def _handle_requestTopic(self, protocols):
         return 1, 'ready on ' + self._node_handle._tcpros_server_uri, ['TCPROS', self._node_handle._tcpros_server_addr[0], self._node_handle._tcpros_server_addr[1]]
     
+    @util.inlineCallbacks
     def _handle_tcpros_conn(self, headers, conn):
-        conn.sendString(tcpros.serialize_dict(dict(
-            callerid=self._node_handle._name,
-            type=self._type._type,
-            md5sum=self._type._md5sum,
-            latching='0',
-        )))
-        self._connections.add(conn)
-        @util.inlineCallbacks
-        def more(string):
-            assert False, string
-        return more
+        try:
+            # XXX handle headers
+            
+            conn.sendString(tcpros.serialize_dict(dict(
+                callerid=self._node_handle._name,
+                type=self._type._type,
+                md5sum=self._type._md5sum,
+                latching='0',
+            )))
+            
+            self._connections.add(conn)
+            try:
+                while True:
+                    x = yield conn.queue.get_next()
+                    print repr(x)
+            finally:
+                self._connections.remove(conn)
+        except (error.ConnectionDone, error.ConnectionLost):
+            pass
+        finally:
+            conn.transport.loseConnection()
     
     def publish(self, msg):
         x = StringIO.StringIO()
@@ -219,7 +238,7 @@ if __name__ == '__main__':
     from geometry_msgs.msg import PointStamped
     pub = nh.advertise('point2', PointStamped)
     def cb(msg):
-        print msg
+        #print msg
         pub.publish(msg)
     nh.subscribe('point', PointStamped, cb)
     
