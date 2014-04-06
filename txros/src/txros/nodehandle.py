@@ -23,13 +23,31 @@ class XMLRPCSlave(xmlrpc.XMLRPC):
     def xmlrpc_requestTopic(self, caller_id, topic, protocols):
         return self._handlers['requestTopic', topic](protocols)
 
+class ROSXMLRPCError(Exception):
+    def __init__(self, code, message):
+        self.code = code
+        self.message = message
+class ROSXMLRPCProxy(object):
+    def __init__(self, proxy, caller_id):
+        self._proxy = proxy
+        self._caller_id = caller_id
+    
+    def __getattr__(self, name):
+        @util.inlineCallbacks
+        def _(*args):
+            statusCode, statusMessage, value = yield self._proxy.callRemote(name, self._caller_id, *args)
+            if statusCode == 1: # SUCCESS
+                defer.returnValue(value)
+            else:
+                raise ROSXMLRPCError(statusCode, statusMessage)
+        return _
+
 class NodeHandle(object):
     def __init__(self, name):
         self._ns = ''
         self._name = self._ns + '/' + name
         
-        self._proxy = xmlrpc.Proxy(os.environ['ROS_MASTER_URI'])
-        #self._proxy.callRemote('getParam', '/test', '/').addCallbacks(printValue, printError)
+        self._proxy = ROSXMLRPCProxy(xmlrpc.Proxy(os.environ['ROS_MASTER_URI']), self._name)
         self._addr = '127.0.0.1' # XXX
         
         self._xmlrpc_handlers = {}
@@ -60,6 +78,9 @@ class NodeHandle(object):
     
     def advertise(self, *args, **kwargs):
         return Publisher(self, *args, **kwargs)
+    
+    def get_param(self, key):
+        return self._proxy.getParam(key)
 
 class Service(object):
     def __init__(self, node_handle, name, service_type, callback):
@@ -72,9 +93,7 @@ class Service(object):
         assert ('service', self._name) not in node_handle._tcpros_handlers
         node_handle._tcpros_handlers['service', self._name] = self._handle_tcpros_conn
         
-        node_handle._proxy.callRemote('registerService',
-            node_handle._name, self._name,
-            node_handle._tcpros_server_uri, node_handle._xmlrpc_server_uri) # XXX check result
+        node_handle._proxy.registerService(self._name, node_handle._tcpros_server_uri, node_handle._xmlrpc_server_uri) # XXX yield on result
     
     @util.inlineCallbacks
     def _handle_tcpros_conn(self, headers, conn):
@@ -124,21 +143,16 @@ class Subscriber(object):
         
         @util.inlineCallbacks
         def reg():
-            statusCode, statusMessage, value = yield node_handle._proxy.callRemote('registerSubscriber',
-                node_handle._name, self._name,
-                self._type._type, node_handle._xmlrpc_server_uri)
-            assert statusCode == 1
-            
-            self._handle_publisher_list(value)
-        reg()
+            publishers = yield node_handle._proxy.registerSubscriber(self._name, self._type._type, node_handle._xmlrpc_server_uri)
+            self._handle_publisher_list(publishers)
+        reg() # fail on error somehow
     
     @util.inlineCallbacks
     def _publisher_thread(self, url):
         while True:
             try:
-                proxy = xmlrpc.Proxy(url)
-                statusCode, statusMessage, value = yield proxy.callRemote('requestTopic', self._node_handle._name, self._name, [['TCPROS']])
-                assert statusCode == 1
+                proxy = ROSXMLRPCProxy(xmlrpc.Proxy(url), self._node_handle._name)
+                value = yield proxy.requestTopic(self._name, [['TCPROS']])
                 
                 protocol, host, port = value
                 conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(util.AutoServerFactory(tcpros.Client))
@@ -187,9 +201,7 @@ class Publisher(object):
         
         self._connections = set()
         
-        node_handle._proxy.callRemote('registerPublisher',
-            node_handle._name, self._name,
-            self._type._type, node_handle._xmlrpc_server_uri) # XXX check result
+        node_handle._proxy.registerPublisher(self._name, self._type._type, node_handle._xmlrpc_server_uri) # XXX check result
     
     def _handle_requestTopic(self, protocols):
         return 1, 'ready on ' + self._node_handle._tcpros_server_uri, ['TCPROS', self._node_handle._tcpros_server_addr[0], self._node_handle._tcpros_server_addr[1]]
