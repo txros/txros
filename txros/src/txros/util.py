@@ -52,8 +52,8 @@ def deferred_has_been_called(df):
         return True, res2[0]
     return False, None
 def it(cur, gen, stop_running, currently_waiting_on, df):
-    #assert currently_waiting_on[0]() is res
-    currently_waiting_on[:] = []
+    #assert currently_waiting_on[0] is not None and currently_waiting_on[0]() is res
+    currently_waiting_on[0] = None
     if stop_running[0]:
         return
     while True:
@@ -78,7 +78,7 @@ def it(cur, gen, stop_running, currently_waiting_on, df):
                     cur = res2
                     continue
                 else:
-                    currently_waiting_on[:] = [weakref.ref(res)]
+                    currently_waiting_on[0] = [weakref.ref(res)]
                     res.addBoth(it, gen, stop_running, currently_waiting_on, df) # external code is run between this and gotResult
             else:
                 cur = res
@@ -94,7 +94,7 @@ def inlineCallbacks(f):
         def cancelled(df_):
             #assert df_ is df
             stop_running[0] = True
-            if currently_waiting_on:
+            if currently_waiting_on[0] is not None:
                 currently_waiting_on[0]().cancel()
                 if gen_weakref:
                     try:
@@ -104,7 +104,7 @@ def inlineCallbacks(f):
                     except:
                         traceback.print_exc()
         df = defer.Deferred(cancelled)
-        currently_waiting_on = []
+        currently_waiting_on = [None]
         it(None, gen, stop_running, currently_waiting_on, df)
         return df
     return _
