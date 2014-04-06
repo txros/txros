@@ -12,17 +12,13 @@ from roscpp.srv import GetLoggers, GetLoggersResponse, SetLoggerLevel, SetLogger
 from txros import util, tcpros
 
 
-class Server(xmlrpc.XMLRPC):
-    '''
-    An example object to be published.
-    '''
+class XMLRPCSlave(xmlrpc.XMLRPC):
     def __init__(self, handlers):
         xmlrpc.XMLRPC.__init__(self)
         self._handlers = handlers
     
     def xmlrpc_publisherUpdate(self, caller_id, topic, publishers):
         return self._handlers['publisherUpdate', topic](publishers)
-        #raise xmlrpc.Fault(123, 'The fault procedure is faulty.')
     
     def xmlrpc_requestTopic(self, caller_id, topic, protocols):
         return self._handlers['requestTopic', topic](protocols)
@@ -36,9 +32,9 @@ class NodeHandle(object):
         #self._proxy.callRemote('getParam', '/test', '/').addCallbacks(printValue, printError)
         self._addr = '127.0.0.1' # XXX
         
-        self._server_handlers = {}
-        self._server = reactor.listenTCP(0, server.Site(Server(self._server_handlers)))
-        self._server_uri = 'http://%s:%i/' % (self._addr, self._server.getHost().port)
+        self._xmlrpc_handlers = {}
+        self._xmlrpc_server = reactor.listenTCP(0, server.Site(XMLRPCSlave(self._xmlrpc_handlers)))
+        self._xmlrpc_server_uri = 'http://%s:%i/' % (self._addr, self._xmlrpc_server.getHost().port)
         
         self._tcpros_handlers = {}
         self._tcpros_server = reactor.listenTCP(0, util.AutoServerFactory(tcpros.Server, self._tcpros_handlers))
@@ -78,7 +74,7 @@ class Service(object):
         
         node_handle._proxy.callRemote('registerService',
             node_handle._name, self._name,
-            node_handle._tcpros_server_uri, node_handle._server_uri) # XXX check result
+            node_handle._tcpros_server_uri, node_handle._xmlrpc_server_uri) # XXX check result
     
     @util.inlineCallbacks
     def _handle_tcpros_conn(self, headers, conn):
@@ -123,14 +119,14 @@ class Subscriber(object):
         
         self._publisher_threads = {}
         
-        assert ('publisherUpdate', self._name) not in node_handle._server_handlers
-        node_handle._server_handlers['publisherUpdate', self._name] = self._handle_publisher_list
+        assert ('publisherUpdate', self._name) not in node_handle._xmlrpc_handlers
+        node_handle._xmlrpc_handlers['publisherUpdate', self._name] = self._handle_publisher_list
         
         @util.inlineCallbacks
         def reg():
             statusCode, statusMessage, value = yield node_handle._proxy.callRemote('registerSubscriber',
                 node_handle._name, self._name,
-                self._type._type, node_handle._server_uri)
+                self._type._type, node_handle._xmlrpc_server_uri)
             assert statusCode == 1
             
             self._handle_publisher_list(value)
@@ -186,14 +182,14 @@ class Publisher(object):
         assert ('topic', self._name) not in node_handle._tcpros_handlers
         node_handle._tcpros_handlers['topic', self._name] = self._handle_tcpros_conn
         
-        assert ('requestTopic', self._name) not in node_handle._server_handlers
-        node_handle._server_handlers['requestTopic', self._name] = self._handle_requestTopic
+        assert ('requestTopic', self._name) not in node_handle._xmlrpc_handlers
+        node_handle._xmlrpc_handlers['requestTopic', self._name] = self._handle_requestTopic
         
         self._connections = set()
         
         node_handle._proxy.callRemote('registerPublisher',
             node_handle._name, self._name,
-            self._type._type, node_handle._server_uri) # XXX check result
+            self._type._type, node_handle._xmlrpc_server_uri) # XXX check result
     
     def _handle_requestTopic(self, protocols):
         return 1, 'ready on ' + self._node_handle._tcpros_server_uri, ['TCPROS', self._node_handle._tcpros_server_addr[0], self._node_handle._tcpros_server_addr[1]]
