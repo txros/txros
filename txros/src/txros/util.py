@@ -78,7 +78,7 @@ def it(cur, gen, stop_running, currently_waiting_on, df):
                     cur = res2
                     continue
                 else:
-                    currently_waiting_on[0] = [weakref.ref(res)]
+                    currently_waiting_on[0] = weakref.ref(res)
                     res.addBoth(it, gen, stop_running, currently_waiting_on, df) # external code is run between this and gotResult
             else:
                 cur = res
@@ -96,9 +96,10 @@ def inlineCallbacks(f):
             stop_running[0] = True
             if currently_waiting_on[0] is not None:
                 currently_waiting_on[0]().cancel()
-                if gen_weakref:
+                maybe_gen = gen_weakref()
+                if maybe_gen is not None:
                     try:
-                        gen_weakref().throw(GeneratorExit) # GC will eventually get it, but move things along...
+                        maybe_gen.throw(GeneratorExit) # GC will eventually get it, but move things along...
                     except GeneratorExit:
                         pass
                     except:
