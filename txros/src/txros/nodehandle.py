@@ -250,5 +250,12 @@ if __name__ == '__main__':
         pub.publish(msg)
     nh.subscribe('point', PointStamped, cb)
     
+    @repr
+    @apply
+    @util.inlineCallbacks
+    def _():
+        while True:
+            yield util.sleep(1)
+            print (yield nh.get_param('/'))
     
     reactor.run()

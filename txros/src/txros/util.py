@@ -51,6 +51,39 @@ def deferred_has_been_called(df):
     if res2:
         return True, res2[0]
     return False, None
+def it(cur, gen, stop_running, currently_waiting_on, df):
+    #assert currently_waiting_on[0]() is res
+    currently_waiting_on[:] = []
+    if stop_running[0]:
+        return
+    while True:
+        try:
+            if isinstance(cur, failure.Failure):
+                res = cur.throwExceptionIntoGenerator(gen) # external code is run here
+            else:
+                res = gen.send(cur) # external code is run here
+            if stop_running[0]:
+                return
+        except StopIteration:
+            df.callback(None)
+        except defer._DefGen_Return as e:
+            # XXX should make sure direct child threw
+            df.callback(e.value)
+        except:
+            df.errback()
+        else:
+            if isinstance(res, defer.Deferred):
+                called, res2 = deferred_has_been_called(res)
+                if called:
+                    cur = res2
+                    continue
+                else:
+                    currently_waiting_on[:] = [weakref.ref(res)]
+                    res.addBoth(it, gen, stop_running, currently_waiting_on, df) # external code is run between this and gotResult
+            else:
+                cur = res
+                continue
+        break
 def inlineCallbacks(f):
     from functools import wraps
     @wraps(f)
@@ -72,42 +105,7 @@ def inlineCallbacks(f):
                         traceback.print_exc()
         df = defer.Deferred(cancelled)
         currently_waiting_on = []
-        def it(cur):
-            while True:
-                try:
-                    if isinstance(cur, failure.Failure):
-                        res = cur.throwExceptionIntoGenerator(gen) # external code is run here
-                    else:
-                        res = gen.send(cur) # external code is run here
-                    if stop_running[0]:
-                        return
-                except StopIteration:
-                    df.callback(None)
-                except defer._DefGen_Return as e:
-                    # XXX should make sure direct child threw
-                    df.callback(e.value)
-                except:
-                    df.errback()
-                else:
-                    if isinstance(res, defer.Deferred):
-                        called, res2 = deferred_has_been_called(res)
-                        if called:
-                            cur = res2
-                            continue
-                        else:
-                            currently_waiting_on[:] = [weakref.ref(res)]
-                            def gotResult(res2):
-                                #assert currently_waiting_on[0]() is res
-                                currently_waiting_on[:] = []
-                                if stop_running[0]:
-                                    return
-                                it(res2)
-                            res.addBoth(gotResult) # external code is run between this and gotResult
-                    else:
-                        cur = res
-                        continue
-                break
-        it(None)
+        it(None, gen, stop_running, currently_waiting_on, df)
         return df
     return _
 
