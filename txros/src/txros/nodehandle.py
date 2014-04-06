@@ -50,6 +50,7 @@ class NodeHandle(object):
         self._name = self._ns + '/' + name
         
         self._shutdown_callbacks = []
+        reactor.addSystemEventTrigger('before', 'shutdown', self.shutdown)
         
         self._proxy = ROSXMLRPCProxy(xmlrpc.Proxy(os.environ['ROS_MASTER_URI']), self._name)
         self._addr = '127.0.0.1' # XXX
@@ -65,15 +66,19 @@ class NodeHandle(object):
         
         self.advertise_service('~get_loggers', GetLoggers, lambda req: GetLoggersResponse())
         self.advertise_service('~set_logger_level', SetLoggerLevel, lambda req: SetLoggerLevelResponse())
-        
-        reactor.addSystemEventTrigger('before','shutdown', self.shutdown)
     
     @util.inlineCallbacks
     def shutdown(self):
         while self._shutdown_callbacks:
-            yield self._shutdown_callbacks.pop()()
+            self._shutdown_callbacks, old = [], self._shutdown_callbacks
+            old_dfs = [func() for func in old]
+            for df in old_dfs:
+                try:
+                    yield df
+                except:
+                    traceback.print_exc()
     
-    def resolve(self, name):
+    def resolve_name(self, name):
         if name.startswith('/'):
             return name
         elif name.startswith('~'):
@@ -86,10 +91,10 @@ class NodeHandle(object):
         return Service._create(self, *args, **kwargs)
     
     def subscribe(self, *args, **kwargs):
-        return Subscriber(self, *args, **kwargs)
+        return Subscriber._create(self, *args, **kwargs)
     
     def advertise(self, *args, **kwargs):
-        return Publisher(self, *args, **kwargs)
+        return Publisher._create(self, *args, **kwargs)
     
     
     def get_param(self, key):
@@ -117,7 +122,7 @@ class Service(object):
         self = cls()
         
         self._node_handle = node_handle
-        self._name = node_handle.resolve(name)
+        self._name = node_handle.resolve_name(name)
         
         self._type = service_type
         self._callback = callback
@@ -126,7 +131,6 @@ class Service(object):
         node_handle._tcpros_handlers['service', self._name] = self._handle_tcpros_conn
         
         yield node_handle._proxy.registerService(self._name, node_handle._tcpros_server_uri, node_handle._xmlrpc_server_uri)
-        
         self._node_handle._shutdown_callbacks.append(self.shutdown)
         
         defer.returnValue(self)
@@ -172,9 +176,13 @@ class Service(object):
             conn.transport.loseConnection()
 
 class Subscriber(object):
-    def __init__(self, node_handle, name, message_type, callback):
+    @classmethod
+    @util.inlineCallbacks
+    def _create(cls, node_handle, name, message_type, callback):
+        self = cls()
+        
         self._node_handle = node_handle
-        self._name = node_handle.resolve(name)
+        self._name = node_handle.resolve_name(name)
         
         self._type = message_type
         self._callback = callback
@@ -184,11 +192,18 @@ class Subscriber(object):
         assert ('publisherUpdate', self._name) not in node_handle._xmlrpc_handlers
         node_handle._xmlrpc_handlers['publisherUpdate', self._name] = self._handle_publisher_list
         
-        @util.inlineCallbacks
-        def reg():
-            publishers = yield node_handle._proxy.registerSubscriber(self._name, self._type._type, node_handle._xmlrpc_server_uri)
-            self._handle_publisher_list(publishers)
-        reg() # fail on error somehow
+        publishers = yield node_handle._proxy.registerSubscriber(self._name, self._type._type, node_handle._xmlrpc_server_uri)
+        self._node_handle._shutdown_callbacks.append(self.shutdown)
+        self._handle_publisher_list(publishers)
+        
+        defer.returnValue(self)
+    
+    def __init__(self):
+        pass
+    
+    @util.inlineCallbacks
+    def shutdown(self):
+        yield self._node_handle._proxy.unregisterSubscriber(self._name, self._node_handle._xmlrpc_server_uri)
     
     @util.inlineCallbacks
     def _publisher_thread(self, url):
@@ -230,9 +245,13 @@ class Subscriber(object):
         self._publisher_threads = new
 
 class Publisher(object):
-    def __init__(self, node_handle, name, message_type):
+    @classmethod
+    @util.inlineCallbacks
+    def _create(cls, node_handle, name, message_type):
+        self = cls()
+        
         self._node_handle = node_handle
-        self._name = node_handle.resolve(name)
+        self._name = node_handle.resolve_name(name)
         
         self._type = message_type
         
@@ -244,7 +263,17 @@ class Publisher(object):
         
         self._connections = set()
         
-        node_handle._proxy.registerPublisher(self._name, self._type._type, node_handle._xmlrpc_server_uri) # XXX check result
+        yield node_handle._proxy.registerPublisher(self._name, self._type._type, node_handle._xmlrpc_server_uri) # XXX check result
+        self._node_handle._shutdown_callbacks.append(self.shutdown)
+        
+        defer.returnValue(self)
+    
+    def __init__(self):
+        pass
+    
+    @util.inlineCallbacks
+    def shutdown(self):
+        yield self._node_handle._proxy.unregisterPublisher(self._name, self._node_handle._xmlrpc_server_uri)
     
     def _handle_requestTopic(self, protocols):
         return 1, 'ready on ' + self._node_handle._tcpros_server_uri, ['TCPROS', self._node_handle._tcpros_server_addr[0], self._node_handle._tcpros_server_addr[1]]
@@ -287,11 +316,16 @@ if __name__ == '__main__':
     
     
     from geometry_msgs.msg import PointStamped
-    pub = nh.advertise('point2', PointStamped)
-    def cb(msg):
-        #print msg
-        pub.publish(msg)
-    nh.subscribe('point', PointStamped, cb)
+    
+    @repr
+    @apply
+    @util.inlineCallbacks
+    def main():
+        pub = yield nh.advertise('point2', PointStamped)
+        def cb(msg):
+            #print msg
+            pub.publish(msg)
+        nh.subscribe('point', PointStamped, cb)
     
     @repr
     @apply
