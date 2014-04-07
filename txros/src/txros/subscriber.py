@@ -22,7 +22,7 @@ class Subscriber(object):
         assert ('publisherUpdate', self._name) not in self._node_handle._xmlrpc_handlers
         self._node_handle._xmlrpc_handlers['publisherUpdate', self._name] = self._handle_publisher_list
         self._think_thread = self._think()
-        self._node_handle._shutdown_callbacks.append(self.shutdown)
+        self._node_handle._shutdown_callbacks.add(self.shutdown)
     
     @util.inlineCallbacks
     def _think(self):
@@ -35,11 +35,17 @@ class Subscriber(object):
                 break
         self._handle_publisher_list(publishers)
     
-    @util.inlineCallbacks
     def shutdown(self):
+        if not hasattr(self, '_shutdown_thread'):
+            self._shutdown_thread = self._real_shutdown()
+        return self._shutdown_thread
+    @util.inlineCallbacks
+    def _real_shutdown(self):
         self._think_thread.cancel()
+        self._think_thread.addErrback(lambda fail: fail.trap(defer.CancelledError))
         yield self._node_handle._proxy.unregisterSubscriber(self._name, self._node_handle._xmlrpc_server_uri)
         del self._node_handle._xmlrpc_handlers['publisherUpdate', self._name]
+        self._node_handle._shutdown_callbacks.discard(self.shutdown)
     
     def get_last_message(self):
         return self._last_message

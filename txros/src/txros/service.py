@@ -3,7 +3,7 @@ from __future__ import division
 import traceback
 import StringIO
 
-from twisted.internet import error
+from twisted.internet import defer, error
 
 from txros import util, tcpros
 
@@ -18,7 +18,7 @@ class Service(object):
         assert ('service', self._name) not in self._node_handle._tcpros_handlers
         self._node_handle._tcpros_handlers['service', self._name] = self._handle_tcpros_conn
         self._think_thread = self._think()
-        self._node_handle._shutdown_callbacks.append(self.shutdown)
+        self._node_handle._shutdown_callbacks.add(self.shutdown)
     
     @util.inlineCallbacks
     def _think(self):
@@ -30,11 +30,17 @@ class Service(object):
             else:
                 break
     
-    @util.inlineCallbacks
     def shutdown(self):
+        if not hasattr(self, '_shutdown_thread'):
+            self._shutdown_thread = self._real_shutdown()
+        return self._shutdown_thread
+    @util.inlineCallbacks
+    def _real_shutdown(self):
         self._think_thread.cancel()
+        self._think_thread.addErrback(lambda fail: fail.trap(defer.CancelledError))
         yield self._node_handle._proxy.unregisterService(self._name, self._node_handle._tcpros_server_uri)
         del self._node_handle._tcpros_handlers['service', self._name]
+        self._node_handle._shutdown_callbacks.discard(self.shutdown)
     
     @util.inlineCallbacks
     def _handle_tcpros_conn(self, headers, conn):

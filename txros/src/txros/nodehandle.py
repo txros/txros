@@ -27,7 +27,7 @@ class NodeHandle(object):
         self._ns = ''
         self._name = self._ns + '/' + name
         
-        self._shutdown_callbacks = []
+        self._shutdown_callbacks = set()
         reactor.addSystemEventTrigger('before', 'shutdown', self.shutdown)
         
         self._proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(os.environ['ROS_MASTER_URI']), self._name)
@@ -45,10 +45,14 @@ class NodeHandle(object):
         self.advertise_service('~get_loggers', GetLoggers, lambda req: GetLoggersResponse())
         self.advertise_service('~set_logger_level', SetLoggerLevel, lambda req: SetLoggerLevelResponse())
     
-    @util.inlineCallbacks
     def shutdown(self):
+        if not hasattr(self, '_shutdown_thread'):
+            self._shutdown_thread = self._real_shutdown()
+        return self._shutdown_thread
+    @util.inlineCallbacks
+    def _real_shutdown(self):
         while self._shutdown_callbacks:
-            self._shutdown_callbacks, old = [], self._shutdown_callbacks
+            self._shutdown_callbacks, old = set(), self._shutdown_callbacks
             old_dfs = [func() for func in old]
             for df in old_dfs:
                 try:

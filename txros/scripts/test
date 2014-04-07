@@ -17,16 +17,25 @@ sub = nh.subscribe('point', PointStamped, cb)
 
 @util.inlineCallbacks
 def task1():
-    while True:
-        msg = yield sub.get_next_message()
-        print msg
+    msg = yield sub.get_next_message()
+    print msg
 task1()
 
 @util.inlineCallbacks
 def task2():
     while True:
         yield util.sleep(1)
-        print (yield nh.get_param('/'))
+        x = yield nh.get_param('/')
 task2()
+
+@util.inlineCallbacks
+def task3():
+    while True:
+        pub = nh.advertise('point3', PointStamped, latching=True)
+        for i in xrange(5):
+            yield util.sleep(0.1)
+            pub.publish(PointStamped())
+        yield pub.shutdown()
+task3()
 
 reactor.run()
