@@ -39,6 +39,8 @@ class Publisher(object):
     def shutdown(self):
         self._think_thread.cancel()
         yield self._node_handle._proxy.unregisterPublisher(self._name, self._node_handle._xmlrpc_server_uri)
+        del self._node_handle._tcpros_handlers['topic', self._name]
+        del self._node_handle._xmlrpc_handlers['requestTopic', self._name]
     
     def _handle_requestTopic(self, protocols):
         return 1, 'ready on ' + self._node_handle._tcpros_server_uri, ['TCPROS', self._node_handle._tcpros_server_addr[0], self._node_handle._tcpros_server_addr[1]]
