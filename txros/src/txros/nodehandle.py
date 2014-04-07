@@ -178,7 +178,7 @@ class Service(object):
 class Subscriber(object):
     @classmethod
     @util.inlineCallbacks
-    def _create(cls, node_handle, name, message_type, callback):
+    def _create(cls, node_handle, name, message_type, callback=lambda message: None):
         self = cls()
         
         self._node_handle = node_handle
@@ -188,6 +188,9 @@ class Subscriber(object):
         self._callback = callback
         
         self._publisher_threads = {}
+        
+        self._last_message = None
+        self._message_dfs = []
         
         assert ('publisherUpdate', self._name) not in node_handle._xmlrpc_handlers
         node_handle._xmlrpc_handlers['publisherUpdate', self._name] = self._handle_publisher_list
@@ -200,6 +203,14 @@ class Subscriber(object):
     
     def __init__(self):
         pass
+    
+    def get_last_message(self):
+        return self._last_message
+    
+    def get_next_message(self):
+        res = defer.Deferred()
+        self._message_dfs.append(res)
+        return res
     
     @util.inlineCallbacks
     def shutdown(self):
@@ -227,7 +238,11 @@ class Subscriber(object):
                     while True:
                         data = yield conn.queue.get_next()
                         msg = self._type().deserialize(data)
+                        self._last_message = msg
                         self._callback(msg)
+                        old, self._message_dfs = self._message_dfs, []
+                        for df in old:
+                            df.callback(msg)
                 finally:
                     conn.transport.loseConnection()
             except (error.ConnectionDone, error.ConnectionLost):

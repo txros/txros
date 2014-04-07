@@ -1,6 +1,9 @@
 #!/usr/bin/python
 
+from twisted.internet import reactor
+
 import txros
+from txros import util
 
 from geometry_msgs.msg import PointStamped
 
@@ -15,7 +18,11 @@ def main():
     def cb(msg):
         #print msg
         pub.publish(msg)
-    nh.subscribe('point', PointStamped, cb)
+    sub = yield nh.subscribe('point', PointStamped, cb)
+    
+    while True:
+        msg = yield sub.get_next_message()
+        print msg
 
 @repr
 @apply
