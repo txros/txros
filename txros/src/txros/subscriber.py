@@ -11,18 +11,16 @@ from txros import rosxmlrpc, tcpros, util
 class Subscriber(object):
     def __init__(self, node_handle, name, message_type, callback=lambda message: None):
         self._node_handle = node_handle
-        self._name = node_handle.resolve_name(name)
-        
+        self._name = self._node_handle.resolve_name(name)
         self._type = message_type
         self._callback = callback
         
         self._publisher_threads = {}
-        
         self._last_message = None
         self._message_dfs = []
         
-        assert ('publisherUpdate', self._name) not in node_handle._xmlrpc_handlers
-        node_handle._xmlrpc_handlers['publisherUpdate', self._name] = self._handle_publisher_list
+        assert ('publisherUpdate', self._name) not in self._node_handle._xmlrpc_handlers
+        self._node_handle._xmlrpc_handlers['publisherUpdate', self._name] = self._handle_publisher_list
         self._think_thread = self._think()
         self._node_handle._shutdown_callbacks.append(self.shutdown)
     

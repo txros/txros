@@ -11,13 +11,12 @@ from txros import util, tcpros
 class Service(object):
     def __init__(self, node_handle, name, service_type, callback):
         self._node_handle = node_handle
-        self._name = node_handle.resolve_name(name)
-        
+        self._name = self._node_handle.resolve_name(name)
         self._type = service_type
         self._callback = callback
         
-        assert ('service', self._name) not in node_handle._tcpros_handlers
-        node_handle._tcpros_handlers['service', self._name] = self._handle_tcpros_conn
+        assert ('service', self._name) not in self._node_handle._tcpros_handlers
+        self._node_handle._tcpros_handlers['service', self._name] = self._handle_tcpros_conn
         self._think_thread = self._think()
         self._node_handle._shutdown_callbacks.append(self.shutdown)
     

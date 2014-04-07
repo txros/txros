@@ -11,18 +11,17 @@ from txros import util, tcpros
 class Publisher(object):
     def __init__(self, node_handle, name, message_type, latching=False):
         self._node_handle = node_handle
-        self._name = node_handle.resolve_name(name)
-        
+        self._name = self._node_handle.resolve_name(name)
         self._type = message_type
         self._latching = latching
         
         self._last_message_data = None
         self._connections = set()
         
-        assert ('topic', self._name) not in node_handle._tcpros_handlers
-        node_handle._tcpros_handlers['topic', self._name] = self._handle_tcpros_conn
-        assert ('requestTopic', self._name) not in node_handle._xmlrpc_handlers
-        node_handle._xmlrpc_handlers['requestTopic', self._name] = self._handle_requestTopic
+        assert ('topic', self._name) not in self._node_handle._tcpros_handlers
+        self._node_handle._tcpros_handlers['topic', self._name] = self._handle_tcpros_conn
+        assert ('requestTopic', self._name) not in self._node_handle._xmlrpc_handlers
+        self._node_handle._xmlrpc_handlers['requestTopic', self._name] = self._handle_requestTopic
         self._think_thread = self._think()
         self._node_handle._shutdown_callbacks.append(self.shutdown)
     
