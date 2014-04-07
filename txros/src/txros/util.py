@@ -68,15 +68,17 @@ def inlineCallbacks(f):
             #assert df_ is df
             stop_running[0] = True
             if currently_waiting_on[0] is not None:
-                currently_waiting_on[0]().cancel()
-                maybe_gen = gen_weakref()
-                if maybe_gen is not None:
-                    try:
-                        maybe_gen.throw(GeneratorExit) # GC will eventually get it, but move things along...
-                    except GeneratorExit:
-                        pass
-                    except:
-                        traceback.print_exc()
+                x = currently_waiting_on[0]()
+                if x is not None:
+                    x.cancel()
+            maybe_gen = gen_weakref()
+            if maybe_gen is not None:
+                try:
+                    maybe_gen.throw(GeneratorExit) # GC will eventually get it, but move things along...
+                except GeneratorExit:
+                    pass
+                except:
+                    traceback.print_exc()
         df = defer.Deferred(cancelled)
         currently_waiting_on = [None]
         it(None, gen, stop_running, currently_waiting_on, df)

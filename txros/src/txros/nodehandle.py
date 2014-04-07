@@ -88,13 +88,13 @@ class NodeHandle(object):
     
     
     def advertise_service(self, *args, **kwargs):
-        return Service._create(self, *args, **kwargs)
+        return Service(self, *args, **kwargs)
     
     def subscribe(self, *args, **kwargs):
-        return Subscriber._create(self, *args, **kwargs)
+        return Subscriber(self, *args, **kwargs)
     
     def advertise(self, *args, **kwargs):
-        return Publisher._create(self, *args, **kwargs)
+        return Publisher(self, *args, **kwargs)
     
     
     def get_param(self, key):
@@ -116,11 +116,7 @@ class NodeHandle(object):
         return self._proxy.getParamNames()
 
 class Service(object):
-    @classmethod
-    @util.inlineCallbacks
-    def _create(cls, node_handle, name, service_type, callback):
-        self = cls()
-        
+    def __init__(self, node_handle, name, service_type, callback):
         self._node_handle = node_handle
         self._name = node_handle.resolve_name(name)
         
@@ -129,18 +125,24 @@ class Service(object):
         
         assert ('service', self._name) not in node_handle._tcpros_handlers
         node_handle._tcpros_handlers['service', self._name] = self._handle_tcpros_conn
-        
-        yield node_handle._proxy.registerService(self._name, node_handle._tcpros_server_uri, node_handle._xmlrpc_server_uri)
+        self._think_thread = self._think()
         self._node_handle._shutdown_callbacks.append(self.shutdown)
-        
-        defer.returnValue(self)
     
-    def __init__(self):
-        pass
+    @util.inlineCallbacks
+    def _think(self):
+        while True:
+            try:
+                yield self._node_handle._proxy.registerService(self._name, self._node_handle._tcpros_server_uri, self._node_handle._xmlrpc_server_uri)
+            except:
+                traceback.print_exc()
+            else:
+                break
     
     @util.inlineCallbacks
     def shutdown(self):
+        self._think_thread.cancel()
         yield self._node_handle._proxy.unregisterService(self._name, self._node_handle._tcpros_server_uri)
+        del self._node_handle._tcpros_handlers['service', self._name]
     
     @util.inlineCallbacks
     def _handle_tcpros_conn(self, headers, conn):
@@ -176,11 +178,7 @@ class Service(object):
             conn.transport.loseConnection()
 
 class Subscriber(object):
-    @classmethod
-    @util.inlineCallbacks
-    def _create(cls, node_handle, name, message_type, callback=lambda message: None):
-        self = cls()
-        
+    def __init__(self, node_handle, name, message_type, callback=lambda message: None):
         self._node_handle = node_handle
         self._name = node_handle.resolve_name(name)
         
@@ -194,15 +192,25 @@ class Subscriber(object):
         
         assert ('publisherUpdate', self._name) not in node_handle._xmlrpc_handlers
         node_handle._xmlrpc_handlers['publisherUpdate', self._name] = self._handle_publisher_list
-        
-        publishers = yield node_handle._proxy.registerSubscriber(self._name, self._type._type, node_handle._xmlrpc_server_uri)
+        self._think_thread = self._think()
         self._node_handle._shutdown_callbacks.append(self.shutdown)
-        self._handle_publisher_list(publishers)
-        
-        defer.returnValue(self)
     
-    def __init__(self):
-        pass
+    @util.inlineCallbacks
+    def _think(self):
+        while True:
+            try:
+                publishers = yield self._node_handle._proxy.registerSubscriber(self._name, self._type._type, self._node_handle._xmlrpc_server_uri)
+            except:
+                traceback.print_exc()
+            else:
+                break
+        self._handle_publisher_list(publishers)
+    
+    @util.inlineCallbacks
+    def shutdown(self):
+        self._think_thread.cancel()
+        yield self._node_handle._proxy.unregisterSubscriber(self._name, self._node_handle._xmlrpc_server_uri)
+        del self._node_handle._xmlrpc_handlers['publisherUpdate', self._name]
     
     def get_last_message(self):
         return self._last_message
@@ -211,10 +219,6 @@ class Subscriber(object):
         res = defer.Deferred()
         self._message_dfs.append(res)
         return res
-    
-    @util.inlineCallbacks
-    def shutdown(self):
-        yield self._node_handle._proxy.unregisterSubscriber(self._name, self._node_handle._xmlrpc_server_uri)
     
     @util.inlineCallbacks
     def _publisher_thread(self, url):
@@ -260,11 +264,7 @@ class Subscriber(object):
         self._publisher_threads = new
 
 class Publisher(object):
-    @classmethod
-    @util.inlineCallbacks
-    def _create(cls, node_handle, name, message_type, latching=False):
-        self = cls()
-        
+    def __init__(self, node_handle, name, message_type, latching=False):
         self._node_handle = node_handle
         self._name = node_handle.resolve_name(name)
         
@@ -272,25 +272,28 @@ class Publisher(object):
         self._latching = latching
         
         self._last_message_data = None
+        self._connections = set()
         
         assert ('topic', self._name) not in node_handle._tcpros_handlers
         node_handle._tcpros_handlers['topic', self._name] = self._handle_tcpros_conn
-        
         assert ('requestTopic', self._name) not in node_handle._xmlrpc_handlers
         node_handle._xmlrpc_handlers['requestTopic', self._name] = self._handle_requestTopic
-        
-        self._connections = set()
-        
-        yield node_handle._proxy.registerPublisher(self._name, self._type._type, node_handle._xmlrpc_server_uri) # XXX check result
+        self._think_thread = self._think()
         self._node_handle._shutdown_callbacks.append(self.shutdown)
-        
-        defer.returnValue(self)
     
-    def __init__(self):
-        pass
+    @util.inlineCallbacks
+    def _think(self):
+        while True:
+            try:
+                yield self._node_handle._proxy.registerPublisher(self._name, self._type._type, self._node_handle._xmlrpc_server_uri)
+            except:
+                traceback.print_exc()
+            else:
+                break
     
     @util.inlineCallbacks
     def shutdown(self):
+        self._think_thread.cancel()
         yield self._node_handle._proxy.unregisterPublisher(self._name, self._node_handle._xmlrpc_server_uri)
     
     def _handle_requestTopic(self, protocols):
