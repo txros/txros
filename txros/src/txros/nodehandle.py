@@ -175,13 +175,19 @@ class NodeHandle(object):
                 except:
                     traceback.print_exc()
     
-    def resolve_name(self, name):
+    def resolve_name_without_remapping(self, name):
         if name.startswith('/'):
             return name
         elif name.startswith('~'):
             return self._name + '/' + name[1:]
         else:
             return self._ns + '/' + name
+    def resolve_name(self, name):
+        name = self.resolve_name_without_remapping(name)
+        for before, after in self._remappings.iteritems():
+            if name == before or name.startswith(before + '/'):
+                return after + name[len(before):]
+        return name
     
     def is_running(self):
         return self._is_running

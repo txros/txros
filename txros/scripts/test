@@ -32,7 +32,7 @@ task2()
 @util.cancellableInlineCallbacks
 def task3():
     while nh.is_running():
-        pub = nh.advertise('point3', PointStamped, latching=True)
+        pub = nh.advertise('~point3', PointStamped, latching=True)
         yield util.sleep(0.001)
         yield pub.shutdown()
 task3()
