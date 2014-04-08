@@ -33,6 +33,7 @@ def deferred_has_been_called(df):
 class InlineCallbacksCancelled(BaseException):
     def __str__(self):
         return 'InlineCallbacksCancelled()'
+    __repr__ = __str__
 def _step(cur, gen, currently_waiting_on, mine, df):
     if currently_waiting_on[0] is not mine:
         #print 'result', repr(cur), 'ignored'

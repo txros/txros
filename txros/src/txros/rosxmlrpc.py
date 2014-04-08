@@ -11,6 +11,7 @@ class Error(Exception):
         self.message = message
     def __str__(self):
         return 'rosxmlrpc.Error' + repr((self.code, self.message))
+    __repr__ = __str__
 
 class Proxy(object):
     def __init__(self, proxy, caller_id):

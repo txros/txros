@@ -12,6 +12,7 @@ class ServiceError(Exception):
         self._message = message
     def __str__(self):
         return 'ServiceError(%r)' % (self._message,)
+    __repr__ = __str__
 
 class ServiceClient(object):
     def __init__(self, node_handle, name, service_type):
