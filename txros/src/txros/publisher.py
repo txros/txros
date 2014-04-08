@@ -86,7 +86,7 @@ class Publisher(object):
     
     def publish(self, msg):
         x = StringIO.StringIO()
-        msg.serialize(x)
+        self._type.serialize(msg, x)
         data = x.getvalue()
         
         for conn in self._connections:

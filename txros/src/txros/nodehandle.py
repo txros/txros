@@ -7,7 +7,7 @@ import sys
 import traceback
 
 from twisted.web import server, xmlrpc
-from twisted.internet import reactor
+from twisted.internet import defer, reactor
 
 from roscpp.srv import GetLoggers, GetLoggersResponse, SetLoggerLevel, SetLoggerLevelResponse
 
@@ -34,12 +34,24 @@ class XMLRPCSlave(xmlrpc.XMLRPC):
     def xmlrpc_getMasterUri(self, caller_id):
         return 1, 'success', self._node_handle._master_uri
     
+    @util.cancellableInlineCallbacks
     def xmlrpc_shutdown(self, caller_id, msg=''):
         print 'Shutdown requested. Reason:', repr(msg)
-        self._node_handle.shutdown()
+        yield self._node_handle.shutdown()
+        # XXX needs to terminate process somehow
+        defer.returnValue((1, 'success', False))
     
     def xmlrpc_getPid(self, caller_id):
         return 1, 'success', os.getpid()
+    
+    def xmlrpc_getSubscriptions(self, caller_id):
+        return 1, 'success', [] # XXX
+    
+    def xmlrpc_getPublications(self, caller_id):
+        return 1, 'success', [] # XXX
+    
+    def xmlrpc_paramUpdate(self, parameter_key, parameter_value):
+        return 1, 'success', False # XXX
     
     def xmlrpc_publisherUpdate(self, caller_id, topic, publishers):
         return self._node_handle._xmlrpc_handlers['publisherUpdate', topic](publishers)

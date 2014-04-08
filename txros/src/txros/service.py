@@ -68,13 +68,12 @@ class Service(object):
                     resp = yield self._callback(req)
                 except Exception as e:
                     traceback.print_exc()
-                    conn.transport.write(chr(0)) # ew
+                    conn.sendByte(chr(0))
                     conn.sendString(str(e))
                 else:
-                    assert isinstance(resp, self._type._response_class)
-                    conn.transport.write(chr(1)) # ew
+                    conn.sendByte(chr(1))
                     x = StringIO.StringIO()
-                    resp.serialize(x)
+                    self._type._response_class.serialize(resp, x)
                     conn.sendString(x.getvalue())
         except (error.ConnectionDone, error.ConnectionLost):
             pass
