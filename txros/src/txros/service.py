@@ -19,7 +19,7 @@ class Service(object):
         self._think_thread = self._think()
         self._node_handle._shutdown_callbacks.add(self.shutdown)
     
-    @util.inlineCallbacks
+    @util.cancellableInlineCallbacks
     def _think(self):
         try:
             assert ('service', self._name) not in self._node_handle._tcpros_handlers
@@ -48,7 +48,7 @@ class Service(object):
         self._think_thread.addErrback(lambda fail: fail.trap(defer.CancelledError))
         return util.branch_deferred(self._shutdown_finished)
     
-    @util.inlineCallbacks
+    @util.cancellableInlineCallbacks
     def _handle_tcpros_conn(self, headers, conn):
         try:
             # check headers

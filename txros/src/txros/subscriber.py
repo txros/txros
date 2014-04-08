@@ -23,7 +23,7 @@ class Subscriber(object):
         self._think_thread = self._think()
         self._node_handle._shutdown_callbacks.add(self.shutdown)
     
-    @util.inlineCallbacks
+    @util.cancellableInlineCallbacks
     def _think(self):
         try:
             assert ('publisherUpdate', self._name) not in self._node_handle._xmlrpc_handlers
@@ -61,7 +61,7 @@ class Subscriber(object):
         self._message_dfs.append(res)
         return res
     
-    @util.inlineCallbacks
+    @util.cancellableInlineCallbacks
     def _publisher_thread(self, url):
         while True:
             try:

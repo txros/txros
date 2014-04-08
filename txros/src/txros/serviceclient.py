@@ -19,7 +19,7 @@ class ServiceClient(object):
         self._name = self._node_handle.resolve_name(name)
         self._type = service_type
     
-    @util.inlineCallbacks
+    @util.cancellableInlineCallbacks
     def __call__(self, req):
         serviceUrl = yield self._node_handle._proxy.lookupService(self._name)
         

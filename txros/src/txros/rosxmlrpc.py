@@ -18,7 +18,7 @@ class Proxy(object):
         self._caller_id = caller_id
     
     def __getattr__(self, name):
-        @util.inlineCallbacks
+        @util.cancellableInlineCallbacks
         def _(*args):
             statusCode, statusMessage, value = yield self._proxy.callRemote(name, self._caller_id, *args)
             if statusCode == 1: # SUCCESS

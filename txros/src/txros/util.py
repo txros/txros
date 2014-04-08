@@ -33,7 +33,7 @@ def deferred_has_been_called(df):
 class InlineCallbacksCancelled(BaseException):
     def __str__(self):
         return 'InlineCallbacksCancelled()'
-def it(cur, gen, currently_waiting_on, mine, df):
+def _step(cur, gen, currently_waiting_on, mine, df):
     if currently_waiting_on[0] is not mine:
         #print 'result', repr(cur), 'ignored'
         return
@@ -61,12 +61,12 @@ def it(cur, gen, currently_waiting_on, mine, df):
                     continue
                 else:
                     currently_waiting_on[0] = res
-                    res.addBoth(it, gen, currently_waiting_on, currently_waiting_on[0], df) # external code is run between this and gotResult
+                    res.addBoth(_step, gen, currently_waiting_on, currently_waiting_on[0], df) # external code is run between this and gotResult
             else:
                 cur = res
                 continue
         break
-def inlineCallbacks(f):
+def cancellableInlineCallbacks(f):
     from functools import wraps
     @wraps(f)
     def _(*args, **kwargs):
@@ -77,10 +77,10 @@ def inlineCallbacks(f):
             x = currently_waiting_on[0]
             currently_waiting_on[0] = None
             x.cancel() # make optional?
-            it(failure.Failure(InlineCallbacksCancelled()), gen, currently_waiting_on, currently_waiting_on[0], df)
+            _step(failure.Failure(InlineCallbacksCancelled()), gen, currently_waiting_on, currently_waiting_on[0], df)
         df = defer.Deferred(cancelled)
         currently_waiting_on = [None]
-        it(None, gen, currently_waiting_on, currently_waiting_on[0], df)
+        _step(None, gen, currently_waiting_on, currently_waiting_on[0], df)
         return df
     return _
 

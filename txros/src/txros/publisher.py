@@ -22,7 +22,7 @@ class Publisher(object):
         self._think_thread = self._think()
         self._node_handle._shutdown_callbacks.add(self.shutdown)
     
-    @util.inlineCallbacks
+    @util.cancellableInlineCallbacks
     def _think(self):
         try:
             assert ('topic', self._name) not in self._node_handle._tcpros_handlers
@@ -57,7 +57,7 @@ class Publisher(object):
     def _handle_requestTopic(self, protocols):
         return 1, 'ready on ' + self._node_handle._tcpros_server_uri, ['TCPROS', self._node_handle._tcpros_server_addr[0], self._node_handle._tcpros_server_addr[1]]
     
-    @util.inlineCallbacks
+    @util.cancellableInlineCallbacks
     def _handle_tcpros_conn(self, headers, conn):
         try:
             # XXX handle headers

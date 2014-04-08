@@ -39,7 +39,7 @@ class NodeHandle(object):
         self._xmlrpc_server_uri = 'http://%s:%i/' % (self._addr, self._xmlrpc_server.getHost().port)
         
         self._tcpros_handlers = {}
-        @util.inlineCallbacks
+        @util.cancellableInlineCallbacks
         def _handle_tcpros_conn(conn):
             try:
                 header = tcpros.deserialize_dict((yield conn.receiveString()))
@@ -67,7 +67,7 @@ class NodeHandle(object):
         if not hasattr(self, '_shutdown_thread'):
             self._shutdown_thread = self._real_shutdown()
         return util.branch_deferred(self._shutdown_thread)
-    @util.inlineCallbacks
+    @util.cancellableInlineCallbacks
     def _real_shutdown(self):
         self._is_running = False
         while self._shutdown_callbacks:
