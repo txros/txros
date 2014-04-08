@@ -75,7 +75,7 @@ class Publisher(object):
             self._connections.add(conn)
             try:
                 while True:
-                    x = yield conn.queue.get_next()
+                    x = yield conn.receiveString()
                     print repr(x)
             finally:
                 self._connections.remove(conn)

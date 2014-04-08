@@ -29,7 +29,7 @@ class ServiceClient(object):
         
         assert protocol == 'rosrpc'
         
-        conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(util.AutoServerFactory(tcpros.Protocol))
+        conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(util.AutoServerFactory(lambda addr: tcpros.Protocol()))
         try:
             conn.sendString(tcpros.serialize_dict(dict(
                 callerid=self._node_handle._name,

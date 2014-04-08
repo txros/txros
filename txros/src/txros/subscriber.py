@@ -69,7 +69,7 @@ class Subscriber(object):
                 value = yield proxy.requestTopic(self._name, [['TCPROS']])
                 
                 protocol, host, port = value
-                conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(util.AutoServerFactory(tcpros.Protocol))
+                conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(util.AutoServerFactory(lambda addr: tcpros.Protocol()))
                 try:
                     conn.sendString(tcpros.serialize_dict(dict(
                         message_definition=self._type._full_text,

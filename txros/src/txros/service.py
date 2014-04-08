@@ -62,7 +62,7 @@ class Service(object):
             )))
             
             while True:
-                string = yield conn.queue.get_next()
+                string = yield conn.receiveString()
                 req = self._type._request_class().deserialize(string)
                 try:
                     resp = yield self._callback(req)

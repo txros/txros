@@ -39,7 +39,24 @@ class NodeHandle(object):
         self._xmlrpc_server_uri = 'http://%s:%i/' % (self._addr, self._xmlrpc_server.getHost().port)
         
         self._tcpros_handlers = {}
-        self._tcpros_server = reactor.listenTCP(0, util.AutoServerFactory(tcpros.Server, self._tcpros_handlers))
+        @util.inlineCallbacks
+        def _handle_tcpros_conn(conn):
+            try:
+                header = tcpros.deserialize_dict((yield conn.receiveString()))
+                if 'service' in header:
+                    self._tcpros_handlers['service', header['service']](header, conn)
+                elif 'topic' in header:
+                    self._tcpros_handlers['topic', header['topic']](header, conn)
+                else:
+                    assert False
+            except:
+                conn.transport.loseConnection()
+                raise
+        def _make_tcpros_protocol(addr):
+            conn = tcpros.Protocol()
+            _handle_tcpros_conn(conn)
+            return conn
+        self._tcpros_server = reactor.listenTCP(0, util.AutoServerFactory(_make_tcpros_protocol))
         self._tcpros_server_uri = 'rosrpc://%s:%i' % (self._addr, self._tcpros_server.getHost().port)
         self._tcpros_server_addr = self._addr, self._tcpros_server.getHost().port
         

@@ -2,10 +2,7 @@ from __future__ import division
 
 import struct
 
-from twisted.protocols import basic
 from twisted.internet import defer, protocol
-
-from txros import util
 
 def deserialize_list(s):
     pos = 0
@@ -28,34 +25,6 @@ def deserialize_dict(s):
     return res
 def serialize_dict(s):
     return serialize_list('%s=%s' % (k, v) for k, v in s.iteritems())
-
-class Server(basic.IntNStringReceiver):
-    structFormat = '<I'
-    prefixLength = struct.calcsize(structFormat)
-    MAX_LENGTH = 2**32
-    
-    def __init__(self, handlers):
-        self._handlers = handlers
-        
-        self.queue = None
-    
-    def stringReceived(self, string):
-        if self.queue is None:
-            # receive header
-            header = deserialize_dict(string)
-            self.queue = util.DeferredQueue()
-            if 'service' in header:
-                self._handlers['service', header['service']](header, self)
-            elif 'topic' in header:
-                self._handlers['topic', header['topic']](header, self)
-            else:
-                assert False
-        else:
-            self.queue.add(string)
-    
-    def connectionLost(self, reason):
-        if self.queue is not None:
-            self.queue.add(reason) # reason is a Failure
 
 class Protocol(protocol.Protocol):
     def __init__(self):
