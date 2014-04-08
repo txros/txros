@@ -27,7 +27,7 @@ class XMLRPCSlave(xmlrpc.XMLRPC):
 
 class NodeHandle(object):
     @classmethod
-    def from_argv(cls, default_name, argv=sys.argv, anonymous=False):
+    def from_argv_with_remaining(cls, default_name, argv=sys.argv, anonymous=False):
         res = [argv[0]]
         remappings = {}
         for arg in argv[1:]:
@@ -72,7 +72,11 @@ class NodeHandle(object):
         if '__ns' in remappings:
             ns = remappings['__ns']
         
-        return cls(ns=ns, name=name, addr=addr, master_uri=master_uri, remappings=remappings)
+        return cls(ns=ns, name=name, addr=addr, master_uri=master_uri, remappings=remappings), res
+    
+    @classmethod
+    def from_argv(cls, *args, **kwargs):
+        return cls.from_argv_with_remaining(*args, **kwargs)[0]
     
     def __init__(self, ns, name, addr, master_uri, remappings):
         if ns: assert ns[0] == '/'
