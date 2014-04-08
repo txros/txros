@@ -103,3 +103,5 @@ class Subscriber(object):
             v.cancel()
             v.addErrback(lambda fail: fail.trap(defer.CancelledError))
         self._publisher_threads = new
+        
+        return 1, 'success', False
