@@ -1,6 +1,9 @@
 from __future__ import division
 
 import os
+import random
+import socket
+import sys
 import traceback
 
 from twisted.web import server, xmlrpc
@@ -23,15 +26,68 @@ class XMLRPCSlave(xmlrpc.XMLRPC):
         return self._handlers['requestTopic', topic](protocols)
 
 class NodeHandle(object):
-    def __init__(self, name):
-        self._ns = ''
+    @classmethod
+    def from_argv(cls, default_name, argv=sys.argv, anonymous=False):
+        res = [argv[0]]
+        remappings = {}
+        for arg in argv[1:]:
+            if ':=' in arg:
+                before, after = arg.split(':=')
+                assert before not in remappings
+                remappings[before] = after
+            else:
+                res.append(arg)
+        
+        name = default_name
+        if anonymous:
+            name = name + '_' + '%016x' % (random.randrange(2**64),)
+        if '__name' in remappings:
+            name = remappings['__name']
+        
+        log = None # what does this default to?
+        if '__log' in remappings:
+            log = remappings['__log']
+        
+        addr = socket.gethostname() # could be a bit smarter
+        if 'ROS_IP' in os.environ:
+            addr = os.environ['ROS_IP']
+        if 'ROS_HOSTNAME' in os.environ:
+            addr = os.environ['ROS_HOSTNAME']
+        if '__ip' in remappings:
+            addr = remappings['__ip']
+        if '__hostname' in remappings:
+            addr = remappings['__hostname']
+        
+        master_uri = None
+        if 'ROS_MASTER_URI' in os.environ:
+            master_uri = os.environ['ROS_MASTER_URI']
+        if '__master' in remappings:
+            master_uri = remappings['__master']
+        if master_uri is None:
+            raise ValueError('either ROS_MASTER_URI variable or __master argument has to be provided')
+        
+        ns = ''
+        if 'ROS_NAMESPACE' in os.environ:
+            ns = os.environ['ROS_NAMESPACE']
+        if '__ns' in remappings:
+            ns = remappings['__ns']
+        
+        return cls(ns=ns, name=name, addr=addr, master_uri=master_uri, remappings=remappings)
+    
+    def __init__(self, ns, name, addr, master_uri, remappings):
+        if ns: assert ns[0] == '/'
+        assert not ns.endswith('/')
+        self._ns = ns # valid values: '', '/a', '/a/b'
+        
+        assert '/' not in name
         self._name = self._ns + '/' + name
         
         self._shutdown_callbacks = set()
         reactor.addSystemEventTrigger('before', 'shutdown', self.shutdown)
         
-        self._proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(os.environ['ROS_MASTER_URI']), self._name)
-        self._addr = '127.0.0.1' # XXX
+        self._addr = addr
+        self._proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(master_uri), self._name)
+        self._remappings = remappings
         self._is_running = True
         
         self._xmlrpc_handlers = {}

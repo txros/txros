@@ -9,7 +9,7 @@ from geometry_msgs.msg import PointStamped
 from roscpp.srv import GetLoggers, GetLoggersRequest
 
 
-nh = txros.NodeHandle('testnode')
+nh = txros.NodeHandle.from_argv('testnode', anonymous=True)
 
 pub = nh.advertise('point2', PointStamped, latching=True)
 def cb(msg):
