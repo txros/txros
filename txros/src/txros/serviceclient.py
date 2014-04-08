@@ -21,7 +21,7 @@ class ServiceClient(object):
     
     @util.cancellableInlineCallbacks
     def __call__(self, req):
-        serviceUrl = yield self._node_handle._proxy.lookupService(self._name)
+        serviceUrl = yield self._node_handle._master_proxy.lookupService(self._name)
         
         protocol, rest = serviceUrl.split('://', 1)
         host, port_str = rest.rsplit(':', 1)

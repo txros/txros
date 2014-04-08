@@ -14,13 +14,13 @@ class Error(Exception):
 
 class Proxy(object):
     def __init__(self, proxy, caller_id):
-        self._proxy = proxy
+        self._master_proxy = proxy
         self._caller_id = caller_id
     
     def __getattr__(self, name):
         @util.cancellableInlineCallbacks
         def _(*args):
-            statusCode, statusMessage, value = yield self._proxy.callRemote(name, self._caller_id, *args)
+            statusCode, statusMessage, value = yield self._master_proxy.callRemote(name, self._caller_id, *args)
             if statusCode == 1: # SUCCESS
                 defer.returnValue(value)
             else:

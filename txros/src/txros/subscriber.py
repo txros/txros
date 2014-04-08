@@ -31,7 +31,7 @@ class Subscriber(object):
             try:
                 while True:
                     try:
-                        publishers = yield self._node_handle._proxy.registerSubscriber(self._name, self._type._type, self._node_handle._xmlrpc_server_uri)
+                        publishers = yield self._node_handle._master_proxy.registerSubscriber(self._name, self._type._type, self._node_handle._xmlrpc_server_uri)
                     except Exception:
                         traceback.print_exc()
                     else:
@@ -40,7 +40,7 @@ class Subscriber(object):
                 yield defer.Deferred() # wait for cancellation
             finally:
                 try:
-                    yield self._node_handle._proxy.unregisterSubscriber(self._name, self._node_handle._xmlrpc_server_uri)
+                    yield self._node_handle._master_proxy.unregisterSubscriber(self._name, self._node_handle._xmlrpc_server_uri)
                 except Exception:
                     traceback.print_exc()
                 del self._node_handle._xmlrpc_handlers['publisherUpdate', self._name]

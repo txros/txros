@@ -127,7 +127,7 @@ class NodeHandle(object):
         self._master_uri = master_uri
         self._remappings = remappings
         
-        self._proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(self._master_uri), self._name)
+        self._master_proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(self._master_uri), self._name)
         self._is_running = True
         
         self._xmlrpc_handlers = {}
@@ -208,19 +208,19 @@ class NodeHandle(object):
     
     
     def get_param(self, key):
-        return self._proxy.getParam(key)
+        return self._master_proxy.getParam(key)
     
     def has_param(self, key):
-        return self._proxy.hasParam(key)
+        return self._master_proxy.hasParam(key)
     
     def delete_param(self, key):
-        return self._proxy.deleteParam(key)
+        return self._master_proxy.deleteParam(key)
     
     def set_param(self, key, value):
-        return self._proxy.setParam(key, value)
+        return self._master_proxy.setParam(key, value)
     
     def search_param(self, key):
-        return self._proxy.searchParam(key)
+        return self._master_proxy.searchParam(key)
     
     def get_param_names(self):
-        return self._proxy.getParamNames()
+        return self._master_proxy.getParamNames()

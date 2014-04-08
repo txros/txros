@@ -27,7 +27,7 @@ class Service(object):
             try:
                 while True:
                     try:
-                        yield self._node_handle._proxy.registerService(self._name, self._node_handle._tcpros_server_uri, self._node_handle._xmlrpc_server_uri)
+                        yield self._node_handle._master_proxy.registerService(self._name, self._node_handle._tcpros_server_uri, self._node_handle._xmlrpc_server_uri)
                     except Exception:
                         traceback.print_exc()
                     else:
@@ -35,7 +35,7 @@ class Service(object):
                 yield defer.Deferred() # wait for cancellation
             finally:
                 try:
-                    yield self._node_handle._proxy.unregisterService(self._name, self._node_handle._tcpros_server_uri)
+                    yield self._node_handle._master_proxy.unregisterService(self._name, self._node_handle._tcpros_server_uri)
                 except Exception:
                     traceback.print_exc()
                 del self._node_handle._tcpros_handlers['service', self._name]
