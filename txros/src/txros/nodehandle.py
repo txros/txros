@@ -156,8 +156,26 @@ class NodeHandle(object):
         self._tcpros_server_uri = 'rosrpc://%s:%i' % (self._addr, self._tcpros_server.getHost().port)
         self._tcpros_server_addr = self._addr, self._tcpros_server.getHost().port
         
+        self._ready_flag = defer.Deferred()
+        self._think()
+        
         self.advertise_service('~get_loggers', GetLoggers, lambda req: GetLoggersResponse())
         self.advertise_service('~set_logger_level', SetLoggerLevel, lambda req: SetLoggerLevelResponse())
+    
+    def _get_ready(self):
+        return util.branch_deferred(self._ready_flag)
+    
+    @util.cancellableInlineCallbacks
+    def _think(self):
+        try:
+            other_node_uri = yield self._master_proxy.lookupNode(self._name)
+        except rosxmlrpc.Error:
+            pass # assume that error means unknown node
+        else:
+            other_node_proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(other_node_uri), self._name)
+            yield other_node_proxy.shutdown('new node registered with same name')
+        
+        self._ready_flag.callback(None)
     
     def shutdown(self):
         if not hasattr(self, '_shutdown_thread'):

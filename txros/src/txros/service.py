@@ -22,6 +22,7 @@ class Service(object):
     @util.cancellableInlineCallbacks
     def _think(self):
         try:
+            yield self._node_handle._get_ready()
             assert ('service', self._name) not in self._node_handle._tcpros_handlers
             self._node_handle._tcpros_handlers['service', self._name] = self._handle_tcpros_conn
             try:

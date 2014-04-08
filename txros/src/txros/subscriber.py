@@ -26,6 +26,7 @@ class Subscriber(object):
     @util.cancellableInlineCallbacks
     def _think(self):
         try:
+            yield self._node_handle._get_ready()
             assert ('publisherUpdate', self._name) not in self._node_handle._xmlrpc_handlers
             self._node_handle._xmlrpc_handlers['publisherUpdate', self._name] = self._handle_publisher_list
             try:
