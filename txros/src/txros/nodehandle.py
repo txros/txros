@@ -8,7 +8,7 @@ from twisted.internet import reactor
 
 from roscpp.srv import GetLoggers, GetLoggersResponse, SetLoggerLevel, SetLoggerLevelResponse
 
-from txros import util, tcpros, publisher, rosxmlrpc, service, subscriber
+from txros import util, tcpros, publisher, rosxmlrpc, service, serviceclient, subscriber
 
 
 class XMLRPCSlave(xmlrpc.XMLRPC):
@@ -77,6 +77,9 @@ class NodeHandle(object):
     
     def advertise_service(self, *args, **kwargs):
         return service.Service(self, *args, **kwargs)
+    
+    def get_service_client(self, *args, **kwargs):
+        return serviceclient.ServiceClient(self, *args, **kwargs)
     
     def subscribe(self, *args, **kwargs):
         return subscriber.Subscriber(self, *args, **kwargs)

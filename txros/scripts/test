@@ -6,6 +6,7 @@ import txros
 from txros import util
 
 from geometry_msgs.msg import PointStamped
+from roscpp.srv import GetLoggers, GetLoggersRequest
 
 
 nh = txros.NodeHandle('testnode')
@@ -35,5 +36,10 @@ def task3():
         yield util.sleep(0.001)
         yield pub.shutdown()
 task3()
+
+@util.inlineCallbacks
+def task4():
+    print (yield nh.get_service_client('/rosout/get_loggers', GetLoggers)(GetLoggersRequest()))
+task4()
 
 reactor.run()
