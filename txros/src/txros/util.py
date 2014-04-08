@@ -1,8 +1,5 @@
 from __future__ import division
 
-import traceback
-import weakref
-
 from twisted.internet import defer, reactor, protocol
 from twisted.python import failure
 
@@ -10,6 +7,14 @@ def sleep(t):
     d = defer.Deferred(canceller=lambda d_: dc.cancel())
     dc = reactor.callLater(t, d.callback, None)
     return d
+
+def branch_deferred(df):
+    branched_df = defer.Deferred()
+    def cb(result):
+        branched_df.callback(result)
+        return result
+    df.addBoth(cb)
+    return branched_df
 
 def deferred_has_been_called(df):
     still_running = True
@@ -24,25 +29,29 @@ def deferred_has_been_called(df):
     if res2:
         return True, res2[0]
     return False, None
-def it(cur, gen, stop_running, currently_waiting_on, df):
-    #assert currently_waiting_on[0] is not None and currently_waiting_on[0]() is res
-    currently_waiting_on[0] = None
-    if stop_running[0]:
+
+class InlineCallbacksCancelled(BaseException):
+    def __str__(self):
+        return 'InlineCallbacksCancelled()'
+def it(cur, gen, currently_waiting_on, mine, df):
+    if currently_waiting_on[0] is not mine:
+        #print 'result', repr(cur), 'ignored'
         return
+    currently_waiting_on[0] = None
     while True:
         try:
             if isinstance(cur, failure.Failure):
                 res = cur.throwExceptionIntoGenerator(gen) # external code is run here
             else:
                 res = gen.send(cur) # external code is run here
-            if stop_running[0]:
-                return
         except StopIteration:
             df.callback(None)
+        except InlineCallbacksCancelled:
+            pass
         except defer._DefGen_Return as e:
             # XXX should make sure direct child threw
             df.callback(e.value)
-        except:
+        except BaseException as e:
             df.errback()
         else:
             if isinstance(res, defer.Deferred):
@@ -51,8 +60,8 @@ def it(cur, gen, stop_running, currently_waiting_on, df):
                     cur = res2
                     continue
                 else:
-                    currently_waiting_on[0] = weakref.ref(res)
-                    res.addBoth(it, gen, stop_running, currently_waiting_on, df) # external code is run between this and gotResult
+                    currently_waiting_on[0] = res
+                    res.addBoth(it, gen, currently_waiting_on, currently_waiting_on[0], df) # external code is run between this and gotResult
             else:
                 cur = res
                 continue
@@ -62,26 +71,16 @@ def inlineCallbacks(f):
     @wraps(f)
     def _(*args, **kwargs):
         gen = f(*args, **kwargs)
-        gen_weakref = weakref.ref(gen)
-        stop_running = [False]
         def cancelled(df_):
             #assert df_ is df
-            stop_running[0] = True
-            if currently_waiting_on[0] is not None:
-                x = currently_waiting_on[0]()
-                if x is not None:
-                    x.cancel()
-            maybe_gen = gen_weakref()
-            if maybe_gen is not None:
-                try:
-                    maybe_gen.throw(GeneratorExit) # GC will eventually get it, but move things along...
-                except GeneratorExit:
-                    pass
-                except:
-                    traceback.print_exc()
+            assert currently_waiting_on[0] is not None
+            x = currently_waiting_on[0]
+            currently_waiting_on[0] = None
+            x.cancel() # make optional?
+            it(failure.Failure(InlineCallbacksCancelled()), gen, currently_waiting_on, currently_waiting_on[0], df)
         df = defer.Deferred(cancelled)
         currently_waiting_on = [None]
-        it(None, gen, stop_running, currently_waiting_on, df)
+        it(None, gen, currently_waiting_on, currently_waiting_on[0], df)
         return df
     return _
 

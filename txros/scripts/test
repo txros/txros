@@ -30,11 +30,9 @@ task2()
 
 @util.inlineCallbacks
 def task3():
-    while True:
+    while nh.is_running():
         pub = nh.advertise('point3', PointStamped, latching=True)
-        for i in xrange(5):
-            yield util.sleep(0.1)
-            pub.publish(PointStamped())
+        yield util.sleep(0.001)
         yield pub.shutdown()
 task3()
 

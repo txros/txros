@@ -15,32 +15,38 @@ class Service(object):
         self._type = service_type
         self._callback = callback
         
-        assert ('service', self._name) not in self._node_handle._tcpros_handlers
-        self._node_handle._tcpros_handlers['service', self._name] = self._handle_tcpros_conn
+        self._shutdown_finished = defer.Deferred()
         self._think_thread = self._think()
         self._node_handle._shutdown_callbacks.add(self.shutdown)
     
     @util.inlineCallbacks
     def _think(self):
-        while True:
+        try:
+            assert ('service', self._name) not in self._node_handle._tcpros_handlers
+            self._node_handle._tcpros_handlers['service', self._name] = self._handle_tcpros_conn
             try:
-                yield self._node_handle._proxy.registerService(self._name, self._node_handle._tcpros_server_uri, self._node_handle._xmlrpc_server_uri)
-            except:
-                traceback.print_exc()
-            else:
-                break
+                while True:
+                    try:
+                        yield self._node_handle._proxy.registerService(self._name, self._node_handle._tcpros_server_uri, self._node_handle._xmlrpc_server_uri)
+                    except Exception:
+                        traceback.print_exc()
+                    else:
+                        break
+                yield defer.Deferred() # wait for cancellation
+            finally:
+                try:
+                    yield self._node_handle._proxy.unregisterService(self._name, self._node_handle._tcpros_server_uri)
+                except Exception:
+                    traceback.print_exc()
+                del self._node_handle._tcpros_handlers['service', self._name]
+        finally:
+            self._shutdown_finished.callback(None)
     
     def shutdown(self):
-        if not hasattr(self, '_shutdown_thread'):
-            self._shutdown_thread = self._real_shutdown()
-        return self._shutdown_thread
-    @util.inlineCallbacks
-    def _real_shutdown(self):
+        self._node_handle._shutdown_callbacks.discard(self.shutdown)
         self._think_thread.cancel()
         self._think_thread.addErrback(lambda fail: fail.trap(defer.CancelledError))
-        yield self._node_handle._proxy.unregisterService(self._name, self._node_handle._tcpros_server_uri)
-        del self._node_handle._tcpros_handlers['service', self._name]
-        self._node_handle._shutdown_callbacks.discard(self.shutdown)
+        return util.branch_deferred(self._shutdown_finished)
     
     @util.inlineCallbacks
     def _handle_tcpros_conn(self, headers, conn):

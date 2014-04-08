@@ -32,6 +32,7 @@ class NodeHandle(object):
         
         self._proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(os.environ['ROS_MASTER_URI']), self._name)
         self._addr = '127.0.0.1' # XXX
+        self._is_running = True
         
         self._xmlrpc_handlers = {}
         self._xmlrpc_server = reactor.listenTCP(0, server.Site(XMLRPCSlave(self._xmlrpc_handlers)))
@@ -48,9 +49,10 @@ class NodeHandle(object):
     def shutdown(self):
         if not hasattr(self, '_shutdown_thread'):
             self._shutdown_thread = self._real_shutdown()
-        return self._shutdown_thread
+        return util.branch_deferred(self._shutdown_thread)
     @util.inlineCallbacks
     def _real_shutdown(self):
+        self._is_running = False
         while self._shutdown_callbacks:
             self._shutdown_callbacks, old = set(), self._shutdown_callbacks
             old_dfs = [func() for func in old]
@@ -68,6 +70,10 @@ class NodeHandle(object):
         else:
             return self._ns + '/' + name
     
+    def is_running(self):
+        return self._is_running
+    def is_shutdown(self):
+        return not self._is_running
     
     def advertise_service(self, *args, **kwargs):
         return service.Service(self, *args, **kwargs)
