@@ -69,7 +69,7 @@ class Subscriber(object):
                 value = yield proxy.requestTopic(self._name, [['TCPROS']])
                 
                 protocol, host, port = value
-                conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(util.AutoServerFactory(tcpros.Client))
+                conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(util.AutoServerFactory(tcpros.Protocol))
                 try:
                     conn.sendString(tcpros.serialize_dict(dict(
                         message_definition=self._type._full_text,
@@ -78,10 +78,10 @@ class Subscriber(object):
                         md5sum=self._type._md5sum,
                         type=self._type._type,
                     )))
-                    header = tcpros.deserialize_dict((yield conn.queue.get_next()))
+                    header = tcpros.deserialize_dict((yield conn.receiveString()))
                     # XXX do something with header
                     while True:
-                        data = yield conn.queue.get_next()
+                        data = yield conn.receiveString()
                         msg = self._type().deserialize(data)
                         self._last_message = msg
                         self._callback(msg)

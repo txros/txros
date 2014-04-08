@@ -57,20 +57,6 @@ class Server(basic.IntNStringReceiver):
         if self.queue is not None:
             self.queue.add(reason) # reason is a Failure
 
-class Client(basic.IntNStringReceiver):
-    structFormat = '<I'
-    prefixLength = struct.calcsize(structFormat)
-    MAX_LENGTH = 2**32
-    
-    def __init__(self):
-        self.queue = util.DeferredQueue()
-    
-    def stringReceived(self, string):
-        self.queue.add(string)
-    
-    def connectionLost(self, reason):
-        self.queue.add(reason) # reason is a Failure
-
 class Protocol(protocol.Protocol):
     def __init__(self):
         self._df_type = None
