@@ -15,15 +15,37 @@ from txros import util, tcpros, publisher, rosxmlrpc, service, serviceclient, su
 
 
 class XMLRPCSlave(xmlrpc.XMLRPC):
-    def __init__(self, handlers):
+    def __init__(self, node_handle):
         xmlrpc.XMLRPC.__init__(self)
-        self._handlers = handlers
+        self._node_handle = node_handle
+    
+    def __getattr__(self, attr):
+        if attr.startswith('xmlrpc_'):
+            print attr, 'not implemented'
+        raise AttributeError(attr)
+    
+    def xmlrpc_getBusStats(self, caller_id):
+        return 1, 'success', [[], [], []] # XXX
+    
+    def xmlrpc_getBusInfo(self, caller_id):
+        # list of (connectionId, destinationId, direction, transport, topic, connected)
+        return 1, 'success', [] # XXX
+    
+    def xmlrpc_getMasterUri(self, caller_id):
+        return 1, 'success', self._node_handle._master_uri
+    
+    def xmlrpc_shutdown(self, caller_id, msg=''):
+        print 'Shutdown requested. Reason:', repr(msg)
+        self._node_handle.shutdown()
+    
+    def xmlrpc_getPid(self, caller_id):
+        return 1, 'success', os.getpid()
     
     def xmlrpc_publisherUpdate(self, caller_id, topic, publishers):
-        return self._handlers['publisherUpdate', topic](publishers)
+        return self._node_handle._xmlrpc_handlers['publisherUpdate', topic](publishers)
     
     def xmlrpc_requestTopic(self, caller_id, topic, protocols):
-        return self._handlers['requestTopic', topic](protocols)
+        return self._node_handle._xmlrpc_handlers['requestTopic', topic](protocols)
 
 class NodeHandle(object):
     @classmethod
@@ -90,12 +112,14 @@ class NodeHandle(object):
         reactor.addSystemEventTrigger('before', 'shutdown', self.shutdown)
         
         self._addr = addr
-        self._proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(master_uri), self._name)
+        self._master_uri = master_uri
         self._remappings = remappings
+        
+        self._proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(self._master_uri), self._name)
         self._is_running = True
         
         self._xmlrpc_handlers = {}
-        self._xmlrpc_server = reactor.listenTCP(0, server.Site(XMLRPCSlave(self._xmlrpc_handlers)))
+        self._xmlrpc_server = reactor.listenTCP(0, server.Site(XMLRPCSlave(self)))
         self._xmlrpc_server_uri = 'http://%s:%i/' % (self._addr, self._xmlrpc_server.getHost().port)
         
         self._tcpros_handlers = {}
