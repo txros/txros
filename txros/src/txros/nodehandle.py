@@ -9,7 +9,9 @@ import traceback
 from twisted.web import server, xmlrpc
 from twisted.internet import defer, reactor
 
+import genpy
 from roscpp.srv import GetLoggers, GetLoggersResponse, SetLoggerLevel, SetLoggerLevelResponse
+from rosgraph_msgs.msg import Clock
 
 from txros import util, tcpros, publisher, rosxmlrpc, service, serviceclient, subscriber
 
@@ -175,6 +177,13 @@ class NodeHandle(object):
             other_node_proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(other_node_uri), self._name)
             yield other_node_proxy.shutdown('new node registered with same name')
         
+        try:
+            self._use_sim_time = yield self.get_param('/use_sim_time')
+        except rosxmlrpc.Error:
+            self._use_sim_time = False
+        if self._use_sim_time:
+            self.subscribe('/clock', Clock, self._got_clock)
+        
         self._ready_flag.callback(None)
     
     def shutdown(self):
@@ -192,6 +201,15 @@ class NodeHandle(object):
                     yield df
                 except:
                     traceback.print_exc()
+    
+    def _got_clock(self, msg):
+        self._sim_time = msg.clock
+    
+    def get_time(self):
+        if hasattr(self, '_use_sim_time') and self._use_sim_time: # XXX may not be set yet
+            return self._sim_time # XXX may not be set yet
+        else:
+            return genpy.Time(reactor.seconds())
     
     def resolve_name_without_remapping(self, name):
         if name.startswith('/'):
