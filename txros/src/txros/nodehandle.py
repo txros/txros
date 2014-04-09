@@ -169,12 +169,14 @@ class NodeHandle(object):
     
     @util.cancellableInlineCallbacks
     def _think(self):
+        # XXX should retry lookupNode on failure
         try:
             other_node_uri = yield self._master_proxy.lookupNode(self._name)
         except rosxmlrpc.Error:
             pass # assume that error means unknown node
         else:
             other_node_proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(other_node_uri), self._name)
+            # XXX should ignore failure
             yield other_node_proxy.shutdown('new node registered with same name')
         
         try:
