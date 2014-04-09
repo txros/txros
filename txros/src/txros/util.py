@@ -78,7 +78,7 @@ def cancellableInlineCallbacks(f):
             x = currently_waiting_on[0]
             currently_waiting_on[0] = None
             x.cancel() # make optional?
-            _step(failure.Failure(InlineCallbacksCancelled()), gen, currently_waiting_on, currently_waiting_on[0], df)
+            _step(failure.Failure(InlineCallbacksCancelled()), gen, currently_waiting_on, currently_waiting_on[0], None)
         df = defer.Deferred(cancelled)
         currently_waiting_on = [None]
         _step(None, gen, currently_waiting_on, currently_waiting_on[0], df)
