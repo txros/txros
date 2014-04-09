@@ -184,6 +184,11 @@ class NodeHandle(object):
         if self._use_sim_time:
             self.subscribe('/clock', Clock, self._got_clock)
         
+        for k, v in self._remappings.iteritems():
+            if k.startswith('_') and not k.startswith('__'):
+                # XXX should attempt to parse v as at least int
+                yield self.set_param(self.resolve_name('~' + k[1:]), v)
+        
         self._ready_flag.callback(None)
     
     def shutdown(self):
