@@ -220,7 +220,9 @@ class NodeHandle(object):
             return self._ns + '/' + name
     def resolve_name(self, name):
         name = self.resolve_name_without_remapping(name)
-        for before, after in self._remappings.iteritems():
+        for before_unresolved, after_unresolved in self._remappings.iteritems():
+            before = self.resolve_name_without_remapping(before_unresolved)
+            after = self.resolve_name_without_remapping(after_unresolved)
             if name == before or name.startswith(before + '/'):
                 return after + name[len(before):]
         return name
