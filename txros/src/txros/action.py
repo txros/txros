@@ -6,6 +6,7 @@ from twisted.internet import defer, reactor
 
 from std_msgs.msg import Header
 from actionlib_msgs.msg import GoalID, GoalStatusArray
+import genpy
 
 from txros import util
 
@@ -20,6 +21,7 @@ class GoalManager(object):
         assert self._goal_id not in self._action_client._goal_managers
         self._action_client._goal_managers[self._goal_id] = self
         
+        self._feedback_dfs = []
         self._result_df = defer.Deferred()
         
         self._think_thread = self._think()
@@ -45,23 +47,43 @@ class GoalManager(object):
         pass # XXX update state
     
     def _result_callback(self, status, result):
-         # XXX update state
+        # XXX update state
+        # XXX cancel feedback deferreds
         
-        del self._action_client._goal_managers[self._goal_id]
+        self.forget()
         
         self._result_df.callback(result)
     
     def _feedback_callback(self, status, feedback):
-        pass # XXX
+        # XXX update state
+        
+        old, self._feedback_dfs = self._feedback_dfs, []
+        for df in old:
+            df.callback(feedback)
     
     def get_result(self):
         return util.branch_deferred(self._result_df)
+    
+    def get_feedback(self):
+        df = defer.Deferred()
+        self._feedback_dfs.append(df)
+        return df
     
     def cancel(self):
         self._action_client._cancel_pub.publish(GoalID(
             stamp=genpy.Time(0, 0),
             id=self._goal_id,
         ))
+        
+        # XXX update state
+        
+        #self.forget()
+    
+    def forget(self):
+        '''leave action running, stop listening'''
+        
+        if self._goal_id in self._action_client._goal_managers:
+            del self._action_client._goal_managers[self._goal_id]
 
 class ActionClient(object):
     def __init__(self, node_handle, name, action_type):
