@@ -20,10 +20,10 @@ class Proxy(object):
     
     def __getattr__(self, name):
         @util.cancellableInlineCallbacks
-        def _(*args):
+        def remote_caller(*args):
             statusCode, statusMessage, value = yield self._master_proxy.callRemote(name, self._caller_id, *args)
             if statusCode == 1: # SUCCESS
                 defer.returnValue(value)
             else:
                 raise Error(statusCode, statusMessage)
-        return _
+        return remote_caller

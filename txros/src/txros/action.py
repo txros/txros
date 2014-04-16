@@ -136,4 +136,4 @@ class ActionClient(object):
         ))
     
     def wait_for_server(self):
-        return util.sleep(max(0, self._start_time + 1 - reactor.seconds()))
+        return util.sleep(max(0, self._start_time + 3 - reactor.seconds()))

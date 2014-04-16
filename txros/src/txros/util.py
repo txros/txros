@@ -70,7 +70,7 @@ def _step(cur, gen, currently_waiting_on, mine, df):
 def cancellableInlineCallbacks(f):
     from functools import wraps
     @wraps(f)
-    def _(*args, **kwargs):
+    def runner(*args, **kwargs):
         gen = f(*args, **kwargs)
         def cancelled(df_):
             #assert df_ is df
@@ -83,7 +83,7 @@ def cancellableInlineCallbacks(f):
         currently_waiting_on = [None]
         _step(None, gen, currently_waiting_on, currently_waiting_on[0], df)
         return df
-    return _
+    return runner
 
 class AutoServerFactory(protocol.ServerFactory):
     def __init__(self, func):

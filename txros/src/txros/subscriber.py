@@ -85,7 +85,10 @@ class Subscriber(object):
                         data = yield conn.receiveString()
                         msg = self._type().deserialize(data)
                         self._last_message = msg
-                        self._callback(msg)
+                        try:
+                            self._callback(msg)
+                        except:
+                            traceback.print_exc()
                         old, self._message_dfs = self._message_dfs, []
                         for df in old:
                             df.callback(msg)

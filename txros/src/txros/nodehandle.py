@@ -159,7 +159,7 @@ class NodeHandle(object):
         self._tcpros_server_addr = self._addr, self._tcpros_server.getHost().port
         
         self._ready_flag = defer.Deferred()
-        self._think()
+        self._node_think()
         
         self.advertise_service('~get_loggers', GetLoggers, lambda req: GetLoggersResponse())
         self.advertise_service('~set_logger_level', SetLoggerLevel, lambda req: SetLoggerLevelResponse())
@@ -168,16 +168,22 @@ class NodeHandle(object):
         return util.branch_deferred(self._ready_flag)
     
     @util.cancellableInlineCallbacks
-    def _think(self):
-        # XXX should retry lookupNode on failure
-        try:
-            other_node_uri = yield self._master_proxy.lookupNode(self._name)
-        except rosxmlrpc.Error:
-            pass # assume that error means unknown node
-        else:
-            other_node_proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(other_node_uri), self._name)
-            # XXX should ignore failure
-            yield other_node_proxy.shutdown('new node registered with same name')
+    def _node_think(self):
+        while True:
+            try:
+                other_node_uri = yield self._master_proxy.lookupNode(self._name)
+            except rosxmlrpc.Error:
+                break # assume that error means unknown node
+            except Exception:
+                traceback.print_exc()
+                yield util.sleep(1)
+            else:
+                other_node_proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(other_node_uri), self._name)
+                try:
+                    yield other_node_proxy.shutdown('new node registered with same name')
+                except Exception:
+                    traceback.print_exc()
+                break
         
         try:
             self._use_sim_time = yield self.get_param('/use_sim_time')
