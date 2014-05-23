@@ -105,14 +105,22 @@ class TransformListener(object):
         self._tf_subscriber.shutdown()
     
     def _got_tfs(self, msg):
+        def make_absolute(frame_id):
+            if not frame_id.startswith('/'):
+                return '/' + frame_id
+            return frame_id
+        
         for transform in msg.transforms:
-            l = self._tfs.setdefault(transform.child_frame_id, [])
+            frame_id = make_absolute(transform.header.frame_id)
+            child_frame_id = make_absolute(transform.child_frame_id)
+            
+            l = self._tfs.setdefault(child_frame_id, [])
             
             if l and transform.header.stamp < l[-1][0]:
-                print transform.child_frame_id, "frame's time decreased!"
+                print child_frame_id, "frame's time decreased!"
                 l.clear()
             
-            l.append((transform.header.stamp, transform.header.frame_id, Transform.from_Transform_message(transform.transform)))
+            l.append((transform.header.stamp, frame_id, Transform.from_Transform_message(transform.transform)))
             
             if l[0][0] <= transform.header.stamp - genpy.Duration(20):
                 pos = 0
@@ -121,7 +129,9 @@ class TransformListener(object):
                 del l[:pos]
         
         for transform in msg.transforms:
-            dfs = self._dfs.pop(transform.child_frame_id, {})
+            frame_id = make_absolute(transform.header.frame_id)
+            
+            dfs = self._dfs.pop(frame_id, {})
             for df in dfs.itervalues():
                 df.callback(None)
     
