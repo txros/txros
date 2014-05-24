@@ -102,7 +102,7 @@ class Subscriber(object):
             yield util.sleep(1)
     
     def _handle_publisher_list(self, publishers):
-        new = dict((k, self._publisher_threads[k] if k in self._publisher_threads else self._publisher_thread(k)) for k in publishers)
+        new = dict((k, self._publisher_threads.pop(k) if k in self._publisher_threads else self._publisher_thread(k)) for k in publishers)
         for k, v in self._publisher_threads.iteritems():
             v.cancel()
             v.addErrback(lambda fail: fail.trap(defer.CancelledError))
