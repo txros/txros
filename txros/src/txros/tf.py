@@ -118,7 +118,7 @@ class TransformListener(object):
             
             if l and transform.header.stamp < l[-1][0]:
                 print child_frame_id, "frame's time decreased!"
-                l.clear()
+                del l[:]
             
             l.append((transform.header.stamp, frame_id, Transform.from_Transform_message(transform.transform)))
             
