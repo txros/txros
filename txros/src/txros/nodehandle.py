@@ -56,10 +56,12 @@ class XMLRPCSlave(xmlrpc.XMLRPC):
         return 1, 'success', False # XXX
     
     def xmlrpc_publisherUpdate(self, caller_id, topic, publishers):
-        return self._node_handle._xmlrpc_handlers['publisherUpdate', topic](publishers)
+        return self._node_handle._xmlrpc_handlers.get(('publisherUpdate', topic),
+            lambda _: (1, 'success', True))(publishers)
     
     def xmlrpc_requestTopic(self, caller_id, topic, protocols):
-        return self._node_handle._xmlrpc_handlers['requestTopic', topic](protocols)
+        return self._node_handle._xmlrpc_handlers.get(('requestTopic', topic),
+            lambda _: (-1, "Not a publisher of [%s]" % topic, []))(protocols)
 
 class NodeHandle(object):
     @classmethod
