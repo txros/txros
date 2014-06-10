@@ -7,7 +7,7 @@ import sys
 import traceback
 
 from twisted.web import server, xmlrpc
-from twisted.internet import defer, reactor
+from twisted.internet import defer, error, reactor
 
 import genpy
 from roscpp.srv import GetLoggers, GetLoggersResponse, SetLoggerLevel, SetLoggerLevelResponse
@@ -183,6 +183,8 @@ class NodeHandle(object):
                 other_node_proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(other_node_uri), self._name)
                 try:
                     yield other_node_proxy.shutdown('new node registered with same name')
+                except error.ConnectionRefusedError:
+                    pass
                 except Exception:
                     traceback.print_exc()
                 break
