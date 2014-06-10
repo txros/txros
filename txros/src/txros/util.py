@@ -30,11 +30,25 @@ def deferred_has_been_called(df):
         return True, res2[0]
     return False, None
 
+class DeferredCancelDeferred(defer.Deferred):
+    def cancel(self):
+        if not self.called:
+            self.errback(failure.Failure(defer.CancelledError()))
+            
+            return self._canceller(self)
+        elif isinstance(self.result, defer.Deferred):
+            # Waiting for another deferred -- cancel it instead.
+            return self.result.cancel()
+
+class UncancellableDeferred(defer.Deferred):
+    def cancel(self):
+        raise TypeError('not cancellable')
+
 class InlineCallbacksCancelled(BaseException):
     def __str__(self):
         return 'InlineCallbacksCancelled()'
     __repr__ = __str__
-def _step(cur, gen, currently_waiting_on, mine, df):
+def _step(cur, gen, currently_waiting_on, mine, df, has_been_cancelled):
     if currently_waiting_on[0] is not mine:
         #print 'result', repr(cur), 'ignored'
         return
@@ -46,12 +60,21 @@ def _step(cur, gen, currently_waiting_on, mine, df):
             else:
                 res = gen.send(cur) # external code is run here
         except StopIteration:
-            df.callback(None)
+            if not has_been_cancelled:
+                df.callback(None)
+            else:
+                df.errback(TypeError('InlineCallbacksCancelled exception was converted to non-exception'))
         except InlineCallbacksCancelled:
-            pass
+            if not has_been_cancelled:
+                df.errback(TypeError('InlineCallbacksCancelled exception resulted unexpectedly'))
+            else:
+                df.callback(None)
         except defer._DefGen_Return as e:
             # XXX should make sure direct child threw
-            df.callback(e.value)
+            if not has_been_cancelled:
+                df.callback(e.value)
+            else:
+                df.errback(TypeError('InlineCallbacksCancelled exception was converted to non-exception'))
         except BaseException as e:
             df.errback()
         else:
@@ -62,7 +85,7 @@ def _step(cur, gen, currently_waiting_on, mine, df):
                     continue
                 else:
                     currently_waiting_on[0] = res
-                    res.addBoth(_step, gen, currently_waiting_on, currently_waiting_on[0], df) # external code is run between this and gotResult
+                    res.addBoth(_step, gen, currently_waiting_on, currently_waiting_on[0], df, has_been_cancelled) # external code is run between this and gotResult
             else:
                 cur = res
                 continue
@@ -77,11 +100,23 @@ def cancellableInlineCallbacks(f):
             assert currently_waiting_on[0] is not None
             x = currently_waiting_on[0]
             currently_waiting_on[0] = None
-            x.cancel() # make optional?
-            _step(failure.Failure(InlineCallbacksCancelled()), gen, currently_waiting_on, currently_waiting_on[0], None)
-        df = defer.Deferred(cancelled)
+            cancel_result = x.cancel() # make optional?
+            
+            if isinstance(cancel_result, defer.Deferred):
+                @cancel_result.addBoth
+                def _(res):
+                    if isinstance(res, failure.Failure):
+                        print res
+                    df2 = UncancellableDeferred()
+                    _step(failure.Failure(InlineCallbacksCancelled()), gen, currently_waiting_on, currently_waiting_on[0], df2, True)
+                    return df2
+            else:
+                df2 = UncancellableDeferred()
+                _step(failure.Failure(InlineCallbacksCancelled()), gen, currently_waiting_on, currently_waiting_on[0], df2, True)
+                return df2
+        df = DeferredCancelDeferred(cancelled)
         currently_waiting_on = [None]
-        _step(None, gen, currently_waiting_on, currently_waiting_on[0], df)
+        _step(None, gen, currently_waiting_on, currently_waiting_on[0], df, False)
         return df
     return runner
 
