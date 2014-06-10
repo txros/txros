@@ -8,8 +8,8 @@ def sleep(t):
     dc = reactor.callLater(t, d.callback, None)
     return d
 
-def branch_deferred(df):
-    branched_df = defer.Deferred()
+def branch_deferred(df, canceller=None):
+    branched_df = defer.Deferred(canceller)
     def cb(result):
         branched_df.callback(result)
         return result

@@ -62,7 +62,7 @@ class GoalManager(object):
             df.callback(feedback)
     
     def get_result(self):
-        return util.branch_deferred(self._result_df)
+        return util.branch_deferred(self._result_df, lambda df_: self.cancel())
     
     def get_feedback(self):
         df = defer.Deferred()
