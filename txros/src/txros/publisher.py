@@ -16,7 +16,7 @@ class Publisher(object):
         self._latching = latching
         
         self._last_message_data = None
-        self._connections = set()
+        self._connections = {}
         
         self._shutdown_finished = defer.Deferred()
         self._think_thread = self._think()
@@ -73,13 +73,13 @@ class Publisher(object):
             if self._latching and self._last_message_data is not None:
                 conn.sendString(self._last_message_data)
             
-            self._connections.add(conn)
+            self._connections[conn] = headers['callerid']
             try:
                 while True:
                     x = yield conn.receiveString()
                     print repr(x)
             finally:
-                self._connections.remove(conn)
+                del self._connections[conn]
         except (error.ConnectionDone, error.ConnectionLost):
             pass
         finally:
@@ -95,3 +95,6 @@ class Publisher(object):
         
         if self._latching:
             self._last_message_data = data
+    
+    def get_connections(self):
+        return set(self._connections.itervalues())

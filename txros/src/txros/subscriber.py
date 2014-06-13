@@ -18,6 +18,7 @@ class Subscriber(object):
         self._publisher_threads = {}
         self._last_message = None
         self._message_dfs = []
+        self._connections = {}
         
         self._shutdown_finished = defer.Deferred()
         self._think_thread = self._think()
@@ -62,6 +63,9 @@ class Subscriber(object):
         self._message_dfs.append(res)
         return res
     
+    def get_connections(self):
+        return set(self._connections.itervalues())
+    
     @util.cancellableInlineCallbacks
     def _publisher_thread(self, url):
         while True:
@@ -80,18 +84,21 @@ class Subscriber(object):
                         type=self._type._type,
                     )))
                     header = tcpros.deserialize_dict((yield conn.receiveString()))
-                    # XXX do something with header
-                    while True:
-                        data = yield conn.receiveString()
-                        msg = self._type().deserialize(data)
-                        self._last_message = msg
-                        try:
-                            self._callback(msg)
-                        except:
-                            traceback.print_exc()
-                        old, self._message_dfs = self._message_dfs, []
-                        for df in old:
-                            df.callback(msg)
+                    self._connections[conn] = header['callerid']
+                    try:
+                        while True:
+                            data = yield conn.receiveString()
+                            msg = self._type().deserialize(data)
+                            self._last_message = msg
+                            try:
+                                self._callback(msg)
+                            except:
+                                traceback.print_exc()
+                            old, self._message_dfs = self._message_dfs, []
+                            for df in old:
+                                df.callback(msg)
+                    finally:
+                        del self._connections[conn]
                 finally:
                     conn.transport.loseConnection()
             except (error.ConnectionDone, error.ConnectionLost):

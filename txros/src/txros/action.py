@@ -101,8 +101,6 @@ class ActionClient(object):
         self._status_sub = self._node_handle.subscribe(self._name + '/status', GoalStatusArray, self._status_callback)
         self._result_sub = self._node_handle.subscribe(self._name + '/result', self._result_type, self._result_callback)
         self._feedback_sub = self._node_handle.subscribe(self._name + '/feedback', self._feedback_type, self._feedback_callback)
-        
-        self._start_time = reactor.seconds()
     
     def _status_callback(self, msg):
         for status in msg.status_list:
@@ -135,5 +133,11 @@ class ActionClient(object):
             id='',
         ))
     
+    @util.cancellableInlineCallbacks
     def wait_for_server(self):
-        return util.sleep(max(0, self._start_time + 3 - reactor.seconds()))
+        while not (self._goal_pub.get_connections() &
+                self._cancel_pub.get_connections() &
+                self._status_sub.get_connections() &
+                self._result_sub.get_connections() &
+                self._feedback_sub.get_connections()):
+            yield util.sleep(0.1) # XXX bad bad bad
