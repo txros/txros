@@ -143,12 +143,16 @@ class NodeHandle(object):
         def _handle_tcpros_conn(conn):
             try:
                 header = tcpros.deserialize_dict((yield conn.receiveString()))
+                def default(header, conn):
+                    conn.sendString(tcpros.serialize_dict(dict(error='unhandled connection')))
+                    conn.transport.loseConnection()
                 if 'service' in header:
-                    self._tcpros_handlers['service', header['service']](header, conn)
+                    self._tcpros_handlers.get(('service', header['service']), default)(header, conn)
                 elif 'topic' in header:
-                    self._tcpros_handlers['topic', header['topic']](header, conn)
+                    self._tcpros_handlers.get(('topic', header['topic']), default)(header, conn)
                 else:
-                    assert False
+                    conn.sendString(tcpros.serialize_dict(dict(error='no topic or service name detected')))
+                    conn.transport.loseConnection()
             except:
                 conn.transport.loseConnection()
                 raise
