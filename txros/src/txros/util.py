@@ -1,7 +1,8 @@
 from __future__ import division
 
-from twisted.internet import defer, reactor, protocol
+from twisted.internet import defer, reactor, protocol, stdio
 from twisted.python import failure
+from twisted.protocols import basic
 
 def sleep(t):
     d = defer.Deferred(canceller=lambda d_: dc.cancel())
@@ -129,3 +130,27 @@ class AutoServerFactory(protocol.ServerFactory):
         if p is not None:
             p.factory = self
         return p
+
+
+@cancellableInlineCallbacks
+def nonblocking_raw_input(prompt):
+    class P(basic.LineOnlyReceiver):
+        delimiter = '\n'
+    
+        def __init__(self, prompt):
+            self._prompt = prompt
+            self.df = defer.Deferred()
+    
+        def connectionMade(self):
+            self.transport.write(self._prompt)
+    
+        def lineReceived(self, line):
+            self.df.callback(line)
+            self.transport.loseConnection()
+    p = P(prompt)
+    f = stdio.StandardIO(p)
+    try:
+        res = yield p.df
+        defer.returnValue(res)
+    finally:
+        f.loseConnection()
