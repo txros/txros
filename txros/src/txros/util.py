@@ -154,3 +154,21 @@ def nonblocking_raw_input(prompt):
         defer.returnValue(res)
     finally:
         f.loseConnection()
+
+class TimeoutError(Exception): pass
+@cancellableInlineCallbacks
+def wrap_timeout(df, duration):
+    timeout = sleep(duration)
+
+    try:
+        result, index = yield defer.DeferredList([df, timeout], fireOnOneCallback=True, fireOnOneErrback=True)
+    finally:
+        yield df.cancel()
+        yield timeout.cancel()
+        df.addErrback(lambda fail: fail.trap(defer.CancelledError))
+        timeout.addErrback(lambda fail: fail.trap(defer.CancelledError))
+
+    if index == 1:
+        raise TimeoutError()
+    else:
+        defer.returnValue(result)
