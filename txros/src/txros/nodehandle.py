@@ -186,7 +186,7 @@ class NodeHandle(object):
             else:
                 other_node_proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(other_node_uri), self._name)
                 try:
-                    yield other_node_proxy.shutdown('new node registered with same name')
+                    yield util.wrap_timeout(other_node_proxy.shutdown('new node registered with same name'), 3)
                 except error.ConnectionRefusedError:
                     pass
                 except Exception:
