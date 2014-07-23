@@ -101,7 +101,7 @@ class Subscriber(object):
                         del self._connections[conn]
                 finally:
                     conn.transport.loseConnection()
-            except (error.ConnectionDone, error.ConnectionLost):
+            except (error.ConnectionDone, error.ConnectionLost, error.ConnectionRefusedError):
                 pass
             except Exception:
                 traceback.print_exc()
