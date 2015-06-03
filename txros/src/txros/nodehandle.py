@@ -5,6 +5,7 @@ import random
 import socket
 import sys
 import traceback
+import yaml
 
 from twisted.web import server, xmlrpc
 from twisted.internet import defer, error, reactor
@@ -202,8 +203,7 @@ class NodeHandle(object):
         
         for k, v in self._remappings.iteritems():
             if k.startswith('_') and not k.startswith('__'):
-                # XXX should attempt to parse v as at least int
-                yield self.set_param(self.resolve_name('~' + k[1:]), v)
+                yield self.set_param(self.resolve_name('~' + k[1:]), yaml.load(v))
         
         self._ready_flag.callback(None)
     
