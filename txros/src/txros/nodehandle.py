@@ -66,6 +66,7 @@ class XMLRPCSlave(xmlrpc.XMLRPC):
 
 class NodeHandle(object):
     @classmethod
+    @util.cancellableInlineCallbacks
     def from_argv_with_remaining(cls, default_name, argv=sys.argv, anonymous=False):
         res = [argv[0]]
         remappings = {}
@@ -111,13 +112,17 @@ class NodeHandle(object):
         if '__ns' in remappings:
             ns = remappings['__ns']
         
-        return cls(ns=ns, name=name, addr=addr, master_uri=master_uri, remappings=remappings), res
+        defer.returnValue(((yield cls(ns=ns, name=name, addr=addr, master_uri=master_uri, remappings=remappings)), res))
     
     @classmethod
+    @util.cancellableInlineCallbacks
     def from_argv(cls, *args, **kwargs):
-        return cls.from_argv_with_remaining(*args, **kwargs)[0]
+        defer.returnValue((yield cls.from_argv_with_remaining(*args, **kwargs))[0])
     
-    def __init__(self, ns, name, addr, master_uri, remappings):
+    @util.cancellableInlineCallbacks
+    def __new__(cls, ns, name, addr, master_uri, remappings):
+        self = object.__new__(cls)
+        
         if ns: assert ns[0] == '/'
         assert not ns.endswith('/')
         self._ns = ns # valid values: '', '/a', '/a/b'
@@ -165,17 +170,6 @@ class NodeHandle(object):
         self._tcpros_server_uri = 'rosrpc://%s:%i' % (self._addr, self._tcpros_server.getHost().port)
         self._tcpros_server_addr = self._addr, self._tcpros_server.getHost().port
         
-        self._ready_flag = defer.Deferred()
-        self._node_think()
-        
-        self.advertise_service('~get_loggers', GetLoggers, lambda req: GetLoggersResponse())
-        self.advertise_service('~set_logger_level', SetLoggerLevel, lambda req: SetLoggerLevelResponse())
-    
-    def _get_ready(self):
-        return util.branch_deferred(self._ready_flag)
-    
-    @util.cancellableInlineCallbacks
-    def _node_think(self):
         while True:
             try:
                 other_node_uri = yield self._master_proxy.lookupNode(self._name)
@@ -205,7 +199,10 @@ class NodeHandle(object):
             if k.startswith('_') and not k.startswith('__'):
                 yield self.set_param(self.resolve_name('~' + k[1:]), yaml.load(v))
         
-        self._ready_flag.callback(None)
+        self.advertise_service('~get_loggers', GetLoggers, lambda req: GetLoggersResponse())
+        self.advertise_service('~set_logger_level', SetLoggerLevel, lambda req: SetLoggerLevelResponse())
+        
+        defer.returnValue(self)
     
     def shutdown(self):
         if not hasattr(self, '_shutdown_thread'):

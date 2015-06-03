@@ -10,12 +10,13 @@ import txros
 from txros import util
 from txros import tf
 
-nh = txros.NodeHandle.from_argv('test_tf', anonymous=True)
-
-tf_listener = tf.TransformListener(nh)
 
 @util.cancellableInlineCallbacks
-def task1():
+def main():
+    nh = yield txros.NodeHandle.from_argv('test_tf', anonymous=True)
+    
+    tf_listener = tf.TransformListener(nh)
+    
     while True:
         try:
             time = nh.get_time() - genpy.Duration(1)
@@ -29,6 +30,4 @@ def task1():
             print (transform2 - transform)/1e-3
             print
         yield util.sleep(0.01)
-task1()
-
-reactor.run()
+util.launch_main(main)

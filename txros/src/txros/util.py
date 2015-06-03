@@ -1,5 +1,7 @@
 from __future__ import division
 
+import traceback
+
 from twisted.internet import defer, reactor, protocol, stdio
 from twisted.python import failure
 from twisted.protocols import basic
@@ -172,3 +174,15 @@ def wrap_timeout(df, duration):
         raise TimeoutError()
     else:
         defer.returnValue(result)
+
+
+def launch_main(main_func):
+    @defer.inlineCallbacks
+    def _():
+        try:
+            yield main_func()
+        except Exception:
+            traceback.print_exc()
+        reactor.stop()
+    reactor.callWhenRunning(_)
+    reactor.run()

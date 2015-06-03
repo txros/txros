@@ -9,13 +9,13 @@ from uf_common.msg import MoveToAction, MoveToGoal, PoseTwistStamped
 from uf_common import orientation_helpers
 
 
-nh = txros.NodeHandle.from_argv('actiontestnode', anonymous=True)
-
-trajectory = nh.subscribe('trajectory', PoseTwistStamped)
-moveto = action.ActionClient(nh, 'moveto', MoveToAction)
-
 @util.cancellableInlineCallbacks
-def task():
+def main():
+    nh = yield txros.NodeHandle.from_argv('actiontestnode', anonymous=True)
+
+    trajectory = nh.subscribe('trajectory', PoseTwistStamped)
+    moveto = action.ActionClient(nh, 'moveto', MoveToAction)
+    
     print 'start'
     
     pose = orientation_helpers.PoseEditor.from_PoseTwistStamped(
@@ -26,8 +26,4 @@ def task():
     goal_manager = moveto.send_goal(pose.forward(0.5).as_MoveToGoal())
     
     yield goal_manager.get_result()
-    
-    reactor.stop()
-task()
-
-reactor.run()
+util.launch_main(main)
