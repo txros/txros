@@ -91,8 +91,9 @@ class Transform(object):
         return transformations.quaternion_multiply(self._q, quaternion)
 
 class TransformListener(object):
-    def __init__(self, node_handle):
+    def __init__(self, node_handle, history_length=genpy.Duration(10)):
         self._node_handle = node_handle
+        self._history_length = history_length
         
         self._id_counter = itertools.count()
         
@@ -122,9 +123,9 @@ class TransformListener(object):
             
             l.append((transform.header.stamp, frame_id, Transform.from_Transform_message(transform.transform)))
             
-            if l[0][0] <= transform.header.stamp - genpy.Duration(20):
+            if l[0][0] <= transform.header.stamp - self._history_length*2:
                 pos = 0
-                while l[pos][0] <= transform.header.stamp - genpy.Duration(10):
+                while l[pos][0] <= transform.header.stamp - self._history_length:
                     pos += 1
                 del l[:pos]
         
