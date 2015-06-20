@@ -1,6 +1,8 @@
 from __future__ import division
 
+import sys
 import traceback
+import types
 
 from twisted.internet import defer, reactor, protocol, stdio
 from twisted.python import failure
@@ -73,7 +75,47 @@ def _step(cur, gen, currently_waiting_on, mine, df, has_been_cancelled):
             else:
                 df.callback(None)
         except defer._DefGen_Return as e:
-            # XXX should make sure direct child threw
+            # below implementation copied from twisted.internet.defer
+            
+            # returnValue() was called; time to give a result to the original
+            # Deferred.  First though, let's try to identify the potentially
+            # confusing situation which results when returnValue() is
+            # accidentally invoked from a different function, one that wasn't
+            # decorated with @inlineCallbacks.
+
+            # The traceback starts in this frame (the one for
+            # _inlineCallbacks); the next one down should be the application
+            # code.
+            appCodeTrace = sys.exc_info()[2].tb_next
+            if isinstance(cur, failure.Failure):
+                # If we invoked this generator frame by throwing an exception
+                # into it, then throwExceptionIntoGenerator will consume an
+                # additional stack frame itself, so we need to skip that too.
+                appCodeTrace = appCodeTrace.tb_next
+            # Now that we've identified the frame being exited by the
+            # exception, let's figure out if returnValue was called from it
+            # directly.  returnValue itself consumes a stack frame, so the
+            # application code will have a tb_next, but it will *not* have a
+            # second tb_next.
+            if appCodeTrace.tb_next.tb_next:
+                # If returnValue was invoked non-local to the frame which it is
+                # exiting, identify the frame that ultimately invoked
+                # returnValue so that we can warn the user, as this behavior is
+                # confusing.
+                ultimateTrace = appCodeTrace
+                while ultimateTrace.tb_next.tb_next:
+                    ultimateTrace = ultimateTrace.tb_next
+                filename = ultimateTrace.tb_frame.f_code.co_filename
+                lineno = ultimateTrace.tb_lineno
+                raise TypeError(
+                    "returnValue() in %r would cause %r to exit: "
+                    "returnValue should only be invoked by functions decorated "
+                    "with inlineCallbacks" % (
+                        ultimateTrace.tb_frame.f_code.co_name,
+                        appCodeTrace.tb_frame.f_code.co_name))
+            
+            # end copying
+            
             if not has_been_cancelled:
                 df.callback(e.value)
             else:
@@ -97,7 +139,19 @@ def cancellableInlineCallbacks(f):
     from functools import wraps
     @wraps(f)
     def runner(*args, **kwargs):
-        gen = f(*args, **kwargs)
+        # another direct copy from twisted.internet.defer; however, in this case, I wrote this
+        try:
+            gen = f(*args, **kwargs)
+        except defer._DefGen_Return:
+            raise TypeError(
+                "inlineCallbacks requires %r to produce a generator; instead "
+                "caught returnValue being used in a non-generator" % (f,))
+        if not isinstance(gen, types.GeneratorType):
+            raise TypeError(
+                "inlineCallbacks requires %r to produce a generator; "
+                "instead got %r" % (f, gen))
+        # end copy
+        
         def cancelled(df_):
             #assert df_ is df
             assert currently_waiting_on[0] is not None
