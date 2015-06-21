@@ -44,6 +44,7 @@ class Transform(object):
     def __init__(self, p, q):
         self._p = numpy.array(p)
         self._q = numpy.array(q)
+        self._q_mat = transformations.quaternion_matrix(self._q)[:3, :3]
     
     def __sub__(self, other):
         return numpy.concatenate([
@@ -64,13 +65,13 @@ class Transform(object):
     
     def __mul__(self, other):
         return Transform(
-            self._p + transformations.quaternion_matrix(self._q)[:3, :3].dot(other._p),
+            self._p + self._q_mat.dot(other._p),
             transformations.quaternion_multiply(self._q, other._q),
         )
     
     def inverse(self):
         return Transform(
-            -transformations.quaternion_matrix(self._q)[:3, :3].T.dot(self._p),
+            -self._q_mat.T.dot(self._p),
             transformations.quaternion_inverse(self._q),
         )
     
@@ -82,10 +83,10 @@ class Transform(object):
     __repr__ = __str__
     
     def transform_point(self, point):
-        return self._p + transformations.quaternion_matrix(self._q)[:3, :3].dot(point)
+        return self._p + self._q_mat.dot(point)
     
     def transform_vector(self, vector):
-        return transformations.quaternion_matrix(self._q)[:3, :3].dot(vector)
+        return self._q_mat.dot(vector)
     
     def transform_quaternion(self, quaternion):
         return transformations.quaternion_multiply(self._q, quaternion)
