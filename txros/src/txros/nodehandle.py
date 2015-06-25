@@ -40,8 +40,13 @@ class XMLRPCSlave(xmlrpc.XMLRPC):
     @util.cancellableInlineCallbacks
     def xmlrpc_shutdown(self, caller_id, msg=''):
         print 'Shutdown requested. Reason:', repr(msg)
+        # XXX should somehow tell/wait for user code to cleanly exit here, e.g. by .cancel()ing main coroutine
         yield self._node_handle.shutdown()
-        # XXX needs to terminate process somehow
+        @util.cancellableInlineCallbacks
+        def _kill_soon():
+            yield util.sleep(0)
+            os._exit(0)
+        _kill_soon()
         defer.returnValue((1, 'success', False))
     
     def xmlrpc_getPid(self, caller_id):
