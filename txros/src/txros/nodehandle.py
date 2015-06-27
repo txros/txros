@@ -225,6 +225,9 @@ class NodeHandle(object):
                 except:
                     traceback.print_exc()
     
+    def get_name(self):
+        return self._name
+    
     def _got_clock(self, msg):
         self._sim_time = msg.clock
     
