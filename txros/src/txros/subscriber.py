@@ -83,6 +83,7 @@ class Subscriber(object):
                         type=self._type._type,
                     )))
                     header = tcpros.deserialize_dict((yield conn.receiveString()))
+                    assert 'callerid' in header, 'callerid missing in header (%r)' % (header,)
                     self._connections[conn] = header['callerid']
                     try:
                         while True:
