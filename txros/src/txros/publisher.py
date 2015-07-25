@@ -96,4 +96,4 @@ class Publisher(object):
             self._last_message_data = data
     
     def get_connections(self):
-        return set(self._connections.itervalues())
+        return list(self._connections.itervalues())

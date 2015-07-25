@@ -63,7 +63,7 @@ class Subscriber(object):
         return res
     
     def get_connections(self):
-        return set(self._connections.itervalues())
+        return list(self._connections.itervalues())
     
     @util.cancellableInlineCallbacks
     def _publisher_thread(self, url):
@@ -83,8 +83,7 @@ class Subscriber(object):
                         type=self._type._type,
                     )))
                     header = tcpros.deserialize_dict((yield conn.receiveString()))
-                    assert 'callerid' in header, 'callerid missing in header (%r)' % (header,)
-                    self._connections[conn] = header['callerid']
+                    self._connections[conn] = header.get('callerid', None)
                     try:
                         while True:
                             data = yield conn.receiveString()
