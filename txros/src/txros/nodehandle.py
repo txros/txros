@@ -151,6 +151,7 @@ class NodeHandle(object):
         
         self._xmlrpc_handlers = {}
         self._xmlrpc_server = reactor.listenTCP(0, server.Site(XMLRPCSlave(self)))
+        self._shutdown_callbacks.add(self._xmlrpc_server.loseConnection)
         self._xmlrpc_server_uri = 'http://%s:%i/' % (self._addr, self._xmlrpc_server.getHost().port)
         
         self._tcpros_handlers = {}
@@ -176,6 +177,7 @@ class NodeHandle(object):
             _handle_tcpros_conn(conn)
             return conn
         self._tcpros_server = reactor.listenTCP(0, util.AutoServerFactory(_make_tcpros_protocol))
+        self._shutdown_callbacks.add(self._tcpros_server.loseConnection)
         self._tcpros_server_uri = 'rosrpc://%s:%i' % (self._addr, self._tcpros_server.getHost().port)
         self._tcpros_server_addr = self._addr, self._tcpros_server.getHost().port
         
