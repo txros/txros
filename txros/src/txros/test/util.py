@@ -64,3 +64,4 @@ def call_with_nodehandle(f):
             yield nh.shutdown()
     finally:
         yield roscore.stop()
+        yield util.wall_sleep(1)
