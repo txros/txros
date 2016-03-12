@@ -4,7 +4,7 @@ import StringIO
 
 from twisted.internet import defer, reactor, endpoints
 
-from txros import util, tcpros
+from txros import util, tcpros, rosxmlrpc
 
 
 class ServiceError(Exception):
@@ -56,3 +56,14 @@ class ServiceClient(object):
                 raise ServiceError(data)
         finally:
             conn.transport.loseConnection()
+    
+    @util.cancellableInlineCallbacks
+    def wait_for_service(self):
+        while True:
+            try:
+                yield self._node_handle._master_proxy.lookupService(self._name)
+            except rosxmlrpc.Error:
+                yield util.wall_sleep(.1) # XXX bad
+                continue
+            else:
+                return

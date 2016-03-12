@@ -3,7 +3,7 @@ from __future__ import division
 from twisted.internet import defer
 from twisted.trial import unittest
 
-from txros import NodeHandle
+from txros import NodeHandle, util
 from txros.test import util as test_util
 
 
@@ -37,4 +37,22 @@ class Test(unittest.TestCase):
             sub = nh.subscribe('/my_topic', Int32)
             yield sub.get_next_message()
             assert sub.get_last_message().data == 42
+        yield test_util.call_with_nodehandle(f)
+    
+    @defer.inlineCallbacks
+    def test_service(self):
+        @defer.inlineCallbacks
+        def f(nh):
+            from roscpp_tutorials.srv import TwoInts, TwoIntsRequest, TwoIntsResponse
+            
+            @util.cancellableInlineCallbacks
+            def callback(req):
+                yield util.wall_sleep(.5)
+                defer.returnValue(TwoIntsResponse(sum=req.a + req.b))
+            nh.advertise_service('/my_service', TwoInts, callback)
+            
+            s = nh.get_service_client('/my_service', TwoInts)
+            yield s.wait_for_service()
+            assert (yield s(TwoIntsRequest(a=10, b=30))).sum == 40
+            assert (yield s(TwoIntsRequest(a=-10, b=30))).sum == 20
         yield test_util.call_with_nodehandle(f)
