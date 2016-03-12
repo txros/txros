@@ -1,29 +1,37 @@
 #!/usr/bin/python
 
-from twisted.internet import reactor
+import random
+
+from twisted.internet import defer
 
 import txros
 from txros import util, action
 
-from uf_common.msg import MoveToAction, MoveToGoal, PoseTwistStamped
-from uf_common import orientation_helpers
+from actionlib.msg import TestAction, TestGoal
 
 
 @util.cancellableInlineCallbacks
 def main():
-    nh = yield txros.NodeHandle.from_argv('actiontestnode', anonymous=True)
-
-    trajectory = nh.subscribe('trajectory', PoseTwistStamped)
-    moveto = action.ActionClient(nh, 'moveto', MoveToAction)
+    nh = yield txros.NodeHandle.from_argv('action_test_node', anonymous=True)
     
-    print 'start'
+    ac = action.ActionClient(nh, 'test_action', TestAction)
     
-    pose = orientation_helpers.PoseEditor.from_PoseTwistStamped(
-        (yield trajectory.get_next_message()))
+    x = random.randrange(1000)
+    goal_manager = ac.send_goal(TestGoal(
+        goal=x,
+    ))
+    print 'sent goal'
     
-    print pose
-    
-    goal_manager = moveto.send_goal(pose.forward(0.5).as_MoveToGoal())
-    
-    yield goal_manager.get_result()
+    while True:
+        result, index = yield defer.DeferredList([goal_manager.get_feedback(), goal_manager.get_result()], fireOnOneCallback=True, fireOnOneErrback=True)
+        
+        if index == 0: # feedback
+            print 'got feedback', result.feedback
+        else:
+            assert index == 1 # result
+            
+            assert result.result == x + 1000, result.result
+            print 'success'
+            
+            break
 util.launch_main(main)
