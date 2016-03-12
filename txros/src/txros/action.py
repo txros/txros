@@ -144,4 +144,4 @@ class ActionClient(object):
                 set(self._status_sub.get_connections()) &
                 set(self._result_sub.get_connections()) &
                 set(self._feedback_sub.get_connections())):
-            yield util.sleep(0.1) # XXX bad bad bad
+            yield util.wall_sleep(0.1) # XXX bad bad bad
