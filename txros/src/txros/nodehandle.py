@@ -226,6 +226,7 @@ class NodeHandle(object):
         return util.branch_deferred(self._shutdown_thread)
     @util.cancellableInlineCallbacks
     def _real_shutdown(self):
+        yield util.wall_sleep(0) # ensure that we are called directly from reactor rather than from a callback, avoiding strange case where a cancellableInlineCallbacks is cancelled while it's running
         self._is_running = False
         while self._shutdown_callbacks:
             self._shutdown_callbacks, old = set(), self._shutdown_callbacks

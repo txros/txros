@@ -52,6 +52,7 @@ class Subscriber(object):
         self._node_handle._shutdown_callbacks.discard(self.shutdown)
         self._think_thread.cancel()
         self._think_thread.addErrback(lambda fail: fail.trap(defer.CancelledError))
+        self._handle_publisher_list([])
         return util.branch_deferred(self._shutdown_finished)
     
     def get_last_message(self):

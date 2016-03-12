@@ -26,3 +26,15 @@ class Test(unittest.TestCase):
             yield nh.delete_param(k)
             assert not (yield nh.has_param(k))
         yield test_util.call_with_nodehandle(f)
+    
+    @defer.inlineCallbacks
+    def test_advertise(self):
+        @defer.inlineCallbacks
+        def f(nh):
+            from std_msgs.msg import Int32
+            pub = nh.advertise('/my_topic', Int32, latching=True)
+            pub.publish(Int32(42))
+            sub = nh.subscribe('/my_topic', Int32)
+            yield sub.get_next_message()
+            assert sub.get_last_message().data == 42
+        yield test_util.call_with_nodehandle(f)
