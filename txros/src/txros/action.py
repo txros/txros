@@ -1,6 +1,7 @@
 from __future__ import division
 
 import random
+import traceback
 
 from twisted.internet import defer, reactor
 
@@ -28,20 +29,23 @@ class GoalManager(object):
     
     @util.cancellableInlineCallbacks
     def _think(self):
-        now = self._action_client._node_handle.get_time()
-        
-        yield self._action_client.wait_for_server()
-        
-        self._action_client._goal_pub.publish(self._action_client._goal_type(
-            header=Header(
-                stamp=now,
-            ),
-            goal_id=GoalID(
-                stamp=now,
-                id=self._goal_id,
-            ),
-            goal=self._goal,
-        ))
+        try:
+            now = self._action_client._node_handle.get_time()
+            
+            yield self._action_client.wait_for_server()
+            
+            self._action_client._goal_pub.publish(self._action_client._goal_type(
+                header=Header(
+                    stamp=now,
+                ),
+                goal_id=GoalID(
+                    stamp=now,
+                    id=self._goal_id,
+                ),
+                goal=self._goal,
+            ))
+        except:
+            traceback.print_exc()
     
     def _status_callback(self, status):
         pass # XXX update state
