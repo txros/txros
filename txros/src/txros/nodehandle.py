@@ -6,6 +6,7 @@ import socket
 import sys
 import traceback
 import yaml
+import time
 
 from twisted.web import server, xmlrpc
 from twisted.internet import defer, error, reactor
@@ -44,7 +45,7 @@ class XMLRPCSlave(xmlrpc.XMLRPC):
         yield self._node_handle.shutdown()
         @util.cancellableInlineCallbacks
         def _kill_soon():
-            yield util.sleep(0)
+            yield util.wall_sleep(0)
             os._exit(0)
         _kill_soon()
         defer.returnValue((1, 'success', False))
@@ -126,6 +127,9 @@ class NodeHandle(object):
     
     @util.cancellableInlineCallbacks
     def __new__(cls, ns, name, addr, master_uri, remappings):
+        # constraints: anything blocking here should print something if it's
+        # taking a long time in order to avoid confusion
+        
         self = object.__new__(cls)
         
         if ns: assert ns[0] == '/'
@@ -182,7 +186,7 @@ class NodeHandle(object):
                 break # assume that error means unknown node
             except Exception:
                 traceback.print_exc()
-                yield util.sleep(1)
+                yield util.wall_sleep(1) # pause so we don't retry immediately
             else:
                 other_node_proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(other_node_uri), self._name)
                 try:
@@ -195,10 +199,15 @@ class NodeHandle(object):
         
         try:
             self._use_sim_time = yield self.get_param('/use_sim_time')
-        except rosxmlrpc.Error:
+        except rosxmlrpc.Error: # assume that error means not found
             self._use_sim_time = False
         if self._use_sim_time:
-            self.subscribe('/clock', Clock, self._got_clock)
+            def got_clock(msg):
+                self._sim_time = msg.clock
+            self._clock_sub = self.subscribe('/clock', Clock, got_clock)
+            # make sure self._sim_time gets set before we continue
+            yield util.wrap_time_notice(self._clock_sub.get_next_message(), 1,
+                'getting simulated time from /clock')
         
         for k, v in self._remappings.iteritems():
             if k.startswith('_') and not k.startswith('__'):
@@ -228,14 +237,31 @@ class NodeHandle(object):
     def get_name(self):
         return self._name
     
-    def _got_clock(self, msg):
-        self._sim_time = msg.clock
-    
     def get_time(self):
-        if hasattr(self, '_use_sim_time') and self._use_sim_time: # XXX may not be set yet
-            return self._sim_time # XXX may not be set yet
+        if self._use_sim_time:
+            return self._sim_time
         else:
-            return genpy.Time(reactor.seconds())
+            return genpy.Time(time.time())
+    
+    @util.cancellableInlineCallbacks
+    def sleep_until(self, time):
+        if isinstance(time, (float, int)): time = genpy.Time.from_sec(time)
+        elif not isinstance(time, genpy.Time): raise TypeError('expected float or genpy.Time')
+        
+        if self._use_sim_time:
+            while self._sim_time < time:
+                yield self._clock_sub.get_next_message()
+        else:
+            while True:
+                current_time = self.get_time()
+                if current_time >= time: return
+                yield util.wall_sleep((time - current_time).to_sec())
+    
+    def sleep(self, duration):
+        if isinstance(duration, (float, int)): duration = genpy.Duration.from_sec(duration)
+        elif not isinstance(duration, genpy.Duration): raise TypeError('expected float or genpy.Duration')
+        
+        return self.sleep_until(self.get_time() + duration)
     
     def resolve_name_without_remapping(self, name):
         if name.startswith('/'):

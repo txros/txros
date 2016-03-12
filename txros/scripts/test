@@ -27,7 +27,7 @@ def main():
     @util.cancellableInlineCallbacks
     def task2():
         while True:
-            yield util.sleep(1)
+            yield nh.sleep(1)
             x = yield nh.get_param('/')
     task2()
 
@@ -35,7 +35,7 @@ def main():
     def task3():
         while nh.is_running():
             pub = nh.advertise('~point3', PointStamped, latching=True)
-            yield util.sleep(0.001)
+            yield nh.sleep(0.001)
             yield pub.shutdown()
     task3()
 

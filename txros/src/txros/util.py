@@ -8,10 +8,22 @@ from twisted.internet import defer, reactor, protocol, stdio
 from twisted.python import failure
 from twisted.protocols import basic
 
-def sleep(t):
-    d = defer.Deferred(canceller=lambda d_: dc.cancel())
-    dc = reactor.callLater(t, d.callback, None)
-    return d
+import genpy
+
+
+def wall_sleep(duration):
+    if isinstance(duration, genpy.Duration): duration = duration.to_sec()
+    elif not isinstance(duration, (float, int)): raise TypeError('expected float or genpy.Duration')
+    df = defer.Deferred(canceller=lambda df_: dc.cancel())
+    dc = reactor.callLater(duration, df.callback, None)
+    return df
+
+def sleep(duration):
+    # printing rather than using DeprecationWarning because DeprecationWarning
+    # is disabled by default, and that's useless.
+    print 'txros.util.sleep is deprecated! use txros.util.wall_sleep instead.'
+    
+    return wall_sleep(duration)
 
 def branch_deferred(df, canceller=None):
     branched_df = defer.Deferred(canceller)
@@ -213,15 +225,16 @@ def nonblocking_raw_input(prompt):
 
 class TimeoutError(Exception): pass
 @cancellableInlineCallbacks
-def wrap_timeout(df, duration):
-    timeout = sleep(duration)
+def wrap_timeout(df, duration, cancel_df_on_timeout=True):
+    timeout = wall_sleep(duration)
 
     try:
         result, index = yield defer.DeferredList([df, timeout], fireOnOneCallback=True, fireOnOneErrback=True)
     finally:
-        yield df.cancel()
+        if cancel_df_on_timeout:
+            yield df.cancel()
+            df.addErrback(lambda fail: fail.trap(defer.CancelledError))
         yield timeout.cancel()
-        df.addErrback(lambda fail: fail.trap(defer.CancelledError))
         timeout.addErrback(lambda fail: fail.trap(defer.CancelledError))
 
     if index == 1:
@@ -229,6 +242,17 @@ def wrap_timeout(df, duration):
     else:
         defer.returnValue(result)
 
+@cancellableInlineCallbacks
+def wrap_time_notice(df, duration, description):
+    '''print description if df is taking more than duration to complete'''
+    
+    try:
+        defer.returnValue((yield wrap_timeout(df, duration, False)))
+    except TimeoutError:
+        print '%s is taking a while...' % (description[0].upper()+description[1:],)
+        res = yield df
+        print '...%s succeeded.' % (description,)
+        defer.returnValue(res)
 
 def launch_main(main_func):
     @defer.inlineCallbacks

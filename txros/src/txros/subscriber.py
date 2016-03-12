@@ -105,7 +105,7 @@ class Subscriber(object):
             except Exception:
                 traceback.print_exc()
             
-            yield util.sleep(1)
+            yield util.wall_sleep(1) # pause so that we don't repeatedly reconnect immediately on failure
     
     def _handle_publisher_list(self, publishers):
         new = dict((k, self._publisher_threads.pop(k) if k in self._publisher_threads else self._publisher_thread(k)) for k in publishers)
