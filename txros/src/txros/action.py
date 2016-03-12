@@ -135,9 +135,9 @@ class ActionClient(object):
     
     @util.cancellableInlineCallbacks
     def wait_for_server(self):
-        while not (self._goal_pub.get_connections() &
-                self._cancel_pub.get_connections() &
-                self._status_sub.get_connections() &
-                self._result_sub.get_connections() &
-                self._feedback_sub.get_connections()):
+        while not (set(self._goal_pub.get_connections()) &
+                set(self._cancel_pub.get_connections()) &
+                set(self._status_sub.get_connections()) &
+                set(self._result_sub.get_connections()) &
+                set(self._feedback_sub.get_connections())):
             yield util.sleep(0.1) # XXX bad bad bad
