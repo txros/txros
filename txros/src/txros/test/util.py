@@ -51,12 +51,12 @@ def start_roscore():
 def call_with_nodehandle(f):
     roscore = yield start_roscore()
     try:
-        nh = yield NodeHandle(
-            ns='',
-            name='node',
-            addr='127.0.0.1',
-            master_uri='http://127.0.0.1:%i' % (roscore.get_port(),),
-            remappings={},
+        nh = yield NodeHandle.from_argv('node',
+            argv=[
+                '__ip:=127.0.0.1',
+                '__master:=http://127.0.0.1:%i' % (roscore.get_port(),),
+            ],
+            anonymous=True,
         )
         try:
             defer.returnValue((yield f(nh)))
