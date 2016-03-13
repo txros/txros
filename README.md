@@ -8,3 +8,5 @@ It is a work in progress, and as such, its API is not stable.
 This repository depends on Twisted, installable with:
 
     sudo apt-get install python-twisted
+
+[![Build Status](https://semaphoreci.com/api/v1/uf-mil/txros/branches/master/badge.svg)](https://semaphoreci.com/uf-mil/txros)
