@@ -9,6 +9,7 @@ import itertools
 from twisted.internet import defer
 
 import genpy
+from geometry_msgs.msg import TransformStamped
 from tf2_msgs.msg import TFMessage
 from tf import transformations # XXX
 
@@ -160,7 +161,7 @@ class TransformListener(object):
             while True:
                 try:
                     new_to_pos, t = self._interpolate(self._tfs.get(to_pos, []), time)
-                except TooFutureError:
+                except _TooFutureError:
                     break
                 except TooPastError:
                     raise
@@ -176,7 +177,7 @@ class TransformListener(object):
             while True:
                 try:
                     new_from_pos, t = self._interpolate(self._tfs.get(from_pos, []), time)
-                except TooFutureError:
+                except _TooFutureError:
                     break
                 except TooPastError:
                     raise
@@ -204,10 +205,10 @@ class TransformListener(object):
             if sorted_list:
                 return sorted_list[-1][1], sorted_list[-1][2]
             else:
-                raise TooFutureError()
+                raise _TooFutureError()
         
         if not sorted_list or time > sorted_list[-1][0]:
-            raise TooFutureError()
+            raise _TooFutureError()
         if time < sorted_list[0][0]:
             raise TooPastError()
         
@@ -226,8 +227,23 @@ class TransformListener(object):
         
         return left[1], left[2] + x*(right[2] - left[2])
 
-class TooFutureError(Exception): # XXX rename
-    pass
+class _TooFutureError(Exception):
+    '''This is an internal exception; it should never escape to the user'''
 
-class TooPastError(Exception): # XXX rename
-    pass
+class TooPastError(Exception):
+    '''
+    User asked for a transform that will never known because it's from before
+    the start of the history buffer
+    '''
+
+class TransformBroadcaster(object):
+    def __init__(self, node_handle):
+        self._node_handle = node_handle
+        self._tf_publisher = self._node_handle.advertise('/tf', TFMessage)
+    
+    def send_transform(self, transform):
+        if not isinstance(transform, TransformStamped):
+            raise TypeError('expected TransformStamped')
+        self._tf_publisher.publish(TFMessage(
+            transforms=[transform],
+        ))
