@@ -1,60 +1,54 @@
 from __future__ import division
 
 import os
-import random
+import tempfile
+import shutil
+import subprocess
 
-from twisted.internet import defer, reactor, endpoints, protocol, error
+from twisted.internet import defer, threads
 
 from txros import NodeHandle, util
 
 
 @defer.inlineCallbacks
-def start_roscore():
-    while True:
-        port = random.randrange(49152, 65535+1) # dynamic TCP port range
+def start_rosmaster():
+    tmpd = tempfile.mkdtemp()
+    try:
+        logfile = '%s/master.log' % (tmpd,)
+        p = subprocess.Popen(['rosmaster', '--core', '-p', '0', '__log:=' + logfile])
         
-        # check that port is free
-        try:
-            prot = yield endpoints.TCP4ClientEndpoint(reactor, '127.0.0.1', port).connect(util.AutoServerFactory(lambda addr: protocol.Protocol()))
-        except error.ConnectionRefusedError:
-            break
+        for i in xrange(1000):
+            if os.path.exists(logfile):
+                success = False
+                with open(logfile, 'rb') as f:
+                    for line in f:
+                        if ': Master initialized: port[0], uri[http://' in line:
+                            port = int(line.split(':')[-1].split('/')[0])
+                            success = True
+                            break
+                if success: break
+            yield util.wall_sleep(.01)
         else:
-            prot.transport.loseConnection()
-            continue
-    
-    p = reactor.spawnProcess(protocol.ProcessProtocol(), 'roscore',
-        args=['roscore', '-p', str(port)], env=dict(os.environ, ROS_MASTER_URI='http://127.0.0.1:%i' % (port,)),
-    )
-    
-    # wait until port is used
-    for i in xrange(100): # 10 seconds max
-        try:
-            prot = yield endpoints.TCP4ClientEndpoint(reactor, '127.0.0.1', port).connect(util.AutoServerFactory(lambda addr: protocol.Protocol()))
-        except error.ConnectionRefusedError:
-            yield util.wall_sleep(.1)
-            continue
-        else:
-            prot.transport.loseConnection()
-            break
-    else:
-        assert False, 'roscore never came up'
-    
-    class ROSCore(object):
-        def get_port(self):
-            return port
-        def stop(self):
-            p.loseConnection()
-            p.signalProcess('TERM')
-    defer.returnValue(ROSCore())
+            assert False, 'rosmaster never came up'
+        
+        class ROSMaster(object):
+            def get_port(self):
+                return port
+            def stop(self):
+                p.terminate()
+                return threads.deferToThread(p.wait)
+        defer.returnValue(ROSMaster())
+    finally:
+        shutil.rmtree(tmpd)
 
 @defer.inlineCallbacks
 def call_with_nodehandle(f):
-    roscore = yield start_roscore()
+    rosmaster = yield start_rosmaster()
     try:
         nh = yield NodeHandle.from_argv('node',
             argv=[
                 '__ip:=127.0.0.1',
-                '__master:=http://127.0.0.1:%i' % (roscore.get_port(),),
+                '__master:=http://127.0.0.1:%i' % (rosmaster.get_port(),),
             ],
             anonymous=True,
         )
@@ -63,5 +57,4 @@ def call_with_nodehandle(f):
         finally:
             yield nh.shutdown()
     finally:
-        yield roscore.stop()
-        yield util.wall_sleep(1) # required to prevent occasional dirty reactor. See issue #9
+        yield rosmaster.stop()
