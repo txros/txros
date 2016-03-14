@@ -4,8 +4,12 @@ import os
 import tempfile
 import shutil
 import subprocess
+import traceback
 
 from twisted.internet import defer, threads
+
+import genpy
+from rosgraph_msgs.msg import Clock
 
 from txros import NodeHandle, util
 
@@ -54,6 +58,54 @@ def call_with_nodehandle(f):
         )
         try:
             defer.returnValue((yield f(nh)))
+        finally:
+            yield nh.shutdown()
+    finally:
+        yield rosmaster.stop()
+
+@util.cancellableInlineCallbacks
+def call_with_nodehandle_sim_time(f):
+    rosmaster = yield start_rosmaster()
+    try:
+        nh = yield NodeHandle.from_argv('node',
+            argv=[
+                '__ip:=127.0.0.1',
+                '__master:=http://127.0.0.1:%i' % (rosmaster.get_port(),),
+            ],
+            anonymous=True,
+        )
+        try:
+            @apply
+            @util.cancellableInlineCallbacks
+            def clock_thread():
+                try:
+                    clock_pub = nh.advertise('/clock', Clock)
+                    t = genpy.Time.from_sec(12345)
+                    while True:
+                        clock_pub.publish(Clock(
+                            clock=t,
+                        ))
+                        yield util.wall_sleep(.01)
+                        t = t + genpy.Duration.from_sec(.1)
+                except Exception:
+                    traceback.print_exc()
+            try:
+                yield nh.set_param('/use_sim_time', True)
+                
+                nh2 = yield NodeHandle.from_argv('node2',
+                    argv=[
+                        '__ip:=127.0.0.1',
+                        '__master:=http://127.0.0.1:%i' % (rosmaster.get_port(),),
+                    ],
+                    anonymous=True,
+                )
+                try:
+                    defer.returnValue((yield f(nh2)))
+                finally:
+                    yield nh2.shutdown()
+            finally:
+                clock_thread.cancel()
+                clock_thread.addErrback(lambda fail: fail.trap(defer.CancelledError))
         finally:
             yield nh.shutdown()
     finally:

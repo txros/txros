@@ -56,3 +56,16 @@ class Test(unittest.TestCase):
             assert (yield s(TwoIntsRequest(a=10, b=30))).sum == 40
             assert (yield s(TwoIntsRequest(a=-10, b=30))).sum == 20
         yield test_util.call_with_nodehandle(f)
+    
+    @defer.inlineCallbacks
+    def test_simulated_time(self):
+        @defer.inlineCallbacks
+        def f(nh):
+            import time
+            
+            t1 = time.time()
+            yield nh.sleep(10)
+            t2 = time.time()
+            
+            assert t2 - t1 < 5
+        yield test_util.call_with_nodehandle_sim_time(f)
