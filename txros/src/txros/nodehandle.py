@@ -18,7 +18,7 @@ from rosgraph_msgs.msg import Clock
 from txros import util, tcpros, publisher, rosxmlrpc, service, serviceclient, subscriber
 
 
-class XMLRPCSlave(xmlrpc.XMLRPC):
+class _XMLRPCSlave(xmlrpc.XMLRPC):
     def __init__(self, node_handle):
         xmlrpc.XMLRPC.__init__(self)
         self._node_handle = node_handle
@@ -150,7 +150,7 @@ class NodeHandle(object):
         self._is_running = True
         
         self._xmlrpc_handlers = {}
-        self._xmlrpc_server = reactor.listenTCP(0, server.Site(XMLRPCSlave(self)))
+        self._xmlrpc_server = reactor.listenTCP(0, server.Site(_XMLRPCSlave(self)))
         self._shutdown_callbacks.add(self._xmlrpc_server.loseConnection)
         self._xmlrpc_server_uri = 'http://%s:%i/' % (self._addr, self._xmlrpc_server.getHost().port)
         
