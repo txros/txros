@@ -125,9 +125,9 @@ class TransformListener(object):
             
             l.append((transform.header.stamp, frame_id, Transform.from_Transform_message(transform.transform)))
             
-            if l[0][0] <= transform.header.stamp - self._history_length*2:
+            if l[0][0] + self._history_length*2 <= transform.header.stamp:
                 pos = 0
-                while l[pos][0] <= transform.header.stamp - self._history_length:
+                while l[pos][0] + self._history_length <= transform.header.stamp:
                     pos += 1
                 del l[:pos]
         
