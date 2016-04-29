@@ -17,6 +17,7 @@ class Subscriber(object):
         
         self._publisher_threads = {}
         self._last_message = None
+        self._last_message_time = None
         self._message_dfs = []
         self._connections = {}
         
@@ -58,6 +59,9 @@ class Subscriber(object):
     def get_last_message(self):
         return self._last_message
     
+    def get_last_message_time(self):
+        return self._last_message_time
+    
     def get_next_message(self):
         res = defer.Deferred()
         self._message_dfs.append(res)
@@ -89,11 +93,14 @@ class Subscriber(object):
                         while True:
                             data = yield conn.receiveString()
                             msg = self._type().deserialize(data)
-                            self._last_message = msg
                             try:
                                 self._callback(msg)
                             except:
                                 traceback.print_exc()
+
+                            self._last_message = msg
+                            self._last_message_time = self._node_handle.get_time()
+
                             old, self._message_dfs = self._message_dfs, []
                             for df in old:
                                 df.callback(msg)
