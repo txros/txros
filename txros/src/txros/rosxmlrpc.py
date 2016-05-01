@@ -17,7 +17,7 @@ class Proxy(object):
     def __init__(self, proxy, caller_id):
         self._master_proxy = proxy
         self._caller_id = caller_id
-    
+
     def __getattr__(self, name):
         @util.cancellableInlineCallbacks
         def remote_caller(*args):

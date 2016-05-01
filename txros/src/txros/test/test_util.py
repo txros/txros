@@ -12,9 +12,9 @@ class Test(unittest.TestCase):
         t1 = reactor.seconds()
         yield util.wall_sleep(2.)
         t2 = reactor.seconds()
-        
+
         assert 1 <= t2 - t1 <= 3
-    
+
     @defer.inlineCallbacks
     def test_wrap_timeout1(self):
         try:
@@ -27,7 +27,7 @@ class Test(unittest.TestCase):
             assert False
         else:
             assert res == 'retval'
-    
+
     @defer.inlineCallbacks
     def test_wrap_timeout2(self):
         try:

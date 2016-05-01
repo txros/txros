@@ -43,6 +43,6 @@ def main():
     def task4():
         print (yield nh.get_service_client('/rosout/get_loggers', GetLoggers)(GetLoggersRequest()))
     task4()
-    
+
     yield defer.Deferred() # never exit
 util.launch_main(main)

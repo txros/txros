@@ -19,17 +19,17 @@ class ServiceClient(object):
         self._node_handle = node_handle
         self._name = self._node_handle.resolve_name(name)
         self._type = service_type
-    
+
     @util.cancellableInlineCallbacks
     def __call__(self, req):
         serviceUrl = yield self._node_handle._master_proxy.lookupService(self._name)
-        
+
         protocol, rest = serviceUrl.split('://', 1)
         host, port_str = rest.rsplit(':', 1)
         port = int(port_str)
-        
+
         assert protocol == 'rosrpc'
-        
+
         conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(util.AutoServerFactory(lambda addr: tcpros.Protocol()))
         try:
             conn.sendString(tcpros.serialize_dict(dict(
@@ -38,16 +38,16 @@ class ServiceClient(object):
                 md5sum=self._type._md5sum,
                 type=self._type._type,
             )))
-            
+
             header = tcpros.deserialize_dict((yield conn.receiveString()))
             # XXX do something with header
-            
+
             # request could be sent before header is received to reduce latency...
             x = StringIO.StringIO()
             self._type._request_class.serialize(req, x)
             data = x.getvalue()
             conn.sendString(data)
-            
+
             result = ord((yield conn.receiveByte()))
             data = yield conn.receiveString()
             if result: # success
@@ -56,7 +56,7 @@ class ServiceClient(object):
                 raise ServiceError(data)
         finally:
             conn.transport.loseConnection()
-    
+
     @util.cancellableInlineCallbacks
     def wait_for_service(self):
         while True:

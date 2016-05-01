@@ -14,9 +14,9 @@ from txros import tf
 @util.cancellableInlineCallbacks
 def main():
     nh = yield txros.NodeHandle.from_argv('test_tf', anonymous=True)
-    
+
     tf_listener = tf.TransformListener(nh)
-    
+
     while True:
         try:
             time = nh.get_time() - genpy.Duration(1)

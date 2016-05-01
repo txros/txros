@@ -14,11 +14,11 @@ class Service(object):
         self._name = self._node_handle.resolve_name(name)
         self._type = service_type
         self._callback = callback
-        
+
         self._shutdown_finished = defer.Deferred()
         self._think_thread = self._think()
         self._node_handle._shutdown_callbacks.add(self.shutdown)
-    
+
     @util.cancellableInlineCallbacks
     def _think(self):
         try:
@@ -41,18 +41,18 @@ class Service(object):
                 del self._node_handle._tcpros_handlers['service', self._name]
         finally:
             self._shutdown_finished.callback(None)
-    
+
     def shutdown(self):
         self._node_handle._shutdown_callbacks.discard(self.shutdown)
         self._think_thread.cancel()
         self._think_thread.addErrback(lambda fail: fail.trap(defer.CancelledError))
         return util.branch_deferred(self._shutdown_finished)
-    
+
     @util.cancellableInlineCallbacks
     def _handle_tcpros_conn(self, headers, conn):
         try:
             # check headers
-            
+
             conn.sendString(tcpros.serialize_dict(dict(
                 callerid=self._node_handle._name,
                 type=self._type._type,
@@ -60,7 +60,7 @@ class Service(object):
                 request_type=self._type._request_class._type,
                 response_type=self._type._response_class._type,
             )))
-            
+
             while True:
                 string = yield conn.receiveString()
                 req = self._type._request_class().deserialize(string)

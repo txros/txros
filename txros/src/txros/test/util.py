@@ -20,7 +20,7 @@ def start_rosmaster():
     try:
         logfile = '%s/master.log' % (tmpd,)
         p = subprocess.Popen(['rosmaster', '--core', '-p', '0', '__log:=' + logfile])
-        
+
         for i in xrange(1000):
             if os.path.exists(logfile):
                 success = False
@@ -34,7 +34,7 @@ def start_rosmaster():
             yield util.wall_sleep(.01)
         else:
             assert False, 'rosmaster never came up'
-        
+
         class ROSMaster(object):
             def get_port(self):
                 return port
@@ -91,7 +91,7 @@ def call_with_nodehandle_sim_time(f):
                     traceback.print_exc()
             try:
                 yield nh.set_param('/use_sim_time', True)
-                
+
                 nh2 = yield NodeHandle.from_argv('node2',
                     argv=[
                         '__ip:=127.0.0.1',

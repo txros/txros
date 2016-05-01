@@ -22,7 +22,7 @@ def sleep(duration):
     # printing rather than using DeprecationWarning because DeprecationWarning
     # is disabled by default, and that's useless.
     print 'txros.util.sleep is deprecated! use txros.util.wall_sleep instead.'
-    
+
     return wall_sleep(duration)
 
 def branch_deferred(df, canceller=None):
@@ -51,7 +51,7 @@ class DeferredCancelDeferred(defer.Deferred):
     def cancel(self):
         if not self.called:
             self.errback(failure.Failure(defer.CancelledError()))
-            
+
             return self._canceller(self)
         elif isinstance(self.result, defer.Deferred):
             # Waiting for another deferred -- cancel it instead.
@@ -88,7 +88,7 @@ def _step(cur, gen, currently_waiting_on, mine, df, has_been_cancelled):
                 df.callback(None)
         except defer._DefGen_Return as e:
             # below implementation copied from twisted.internet.defer
-            
+
             # returnValue() was called; time to give a result to the original
             # Deferred.  First though, let's try to identify the potentially
             # confusing situation which results when returnValue() is
@@ -125,9 +125,9 @@ def _step(cur, gen, currently_waiting_on, mine, df, has_been_cancelled):
                     "with inlineCallbacks" % (
                         ultimateTrace.tb_frame.f_code.co_name,
                         appCodeTrace.tb_frame.f_code.co_name))
-            
+
             # end copying
-            
+
             if not has_been_cancelled:
                 df.callback(e.value)
             else:
@@ -163,14 +163,14 @@ def cancellableInlineCallbacks(f):
                 "inlineCallbacks requires %r to produce a generator; "
                 "instead got %r" % (f, gen))
         # end copy
-        
+
         def cancelled(df_):
             #assert df_ is df
             assert currently_waiting_on[0] is not None
             x = currently_waiting_on[0]
             currently_waiting_on[0] = None
             cancel_result = x.cancel() # make optional?
-            
+
             if isinstance(cancel_result, defer.Deferred):
                 @cancel_result.addBoth
                 def _(res):
@@ -192,7 +192,7 @@ def cancellableInlineCallbacks(f):
 class AutoServerFactory(protocol.ServerFactory):
     def __init__(self, func):
         self._func = func
-    
+
     def buildProtocol(self, addr):
         p = self._func(addr)
         if p is not None:
@@ -204,14 +204,14 @@ class AutoServerFactory(protocol.ServerFactory):
 def nonblocking_raw_input(prompt):
     class P(basic.LineOnlyReceiver):
         delimiter = '\n'
-    
+
         def __init__(self, prompt):
             self._prompt = prompt
             self.df = defer.Deferred()
-    
+
         def connectionMade(self):
             self.transport.write(self._prompt)
-    
+
         def lineReceived(self, line):
             self.df.callback(line)
             self.transport.loseConnection()
@@ -245,7 +245,7 @@ def wrap_timeout(df, duration, cancel_df_on_timeout=True):
 @cancellableInlineCallbacks
 def wrap_time_notice(df, duration, description):
     '''print description if df is taking more than duration to complete'''
-    
+
     try:
         defer.returnValue((yield wrap_timeout(df, duration, False)))
     except TimeoutError:
