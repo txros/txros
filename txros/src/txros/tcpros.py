@@ -31,24 +31,24 @@ class Protocol(protocol.Protocol):
         self._df_type = None
         self._buf = ''
         self._error = None
-    
+
     def dataReceived(self, data):
         self._buf += data
         self._think()
-    
+
     def connectionLost(self, reason):
         self._error = reason
         self._think()
-    
+
     def _think(self):
         if self._df_type is None:
             return
         df, type_ = self._df_type
-        
+
         if self._error is not None:
             df.callback(self._error)
             return
-        
+
         if type_ == 'byte':
             if self._buf:
                 byte, self._buf = self._buf[0], self._buf[1:]
@@ -63,19 +63,19 @@ class Protocol(protocol.Protocol):
                     df.callback(data)
         else:
             assert False
-    
+
     def _receive(self, type_):
         assert self._df_type is None
         df = defer.Deferred()
         self._df_type = df, type_
         self._think()
         return df
-    
+
     def receiveByte(self):
         return self._receive('byte')
     def receiveString(self):
         return self._receive('string')
-    
+
     def sendByte(self, byte):
         assert len(byte) == 1
         self.transport.write(byte)

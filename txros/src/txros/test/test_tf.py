@@ -43,14 +43,14 @@ class Test(unittest.TestCase):
                     traceback.print_exc()
             try:
                 tf_listener = tf.TransformListener(nh, history_length=genpy.Duration(1)) # short history length so that we cover history being truncated
-                
+
                 try:
                     yield tf_listener.get_transform('/parent', '/child', nh.get_time() - genpy.Duration(100))
                 except tf.TooPastError:
                     pass
                 else:
                     self.fail('expected TooPastError')
-                
+
                 start_time = nh.get_time()
                 for i in xrange(200):
                     time = start_time + genpy.Duration.from_sec(1 + i/100)

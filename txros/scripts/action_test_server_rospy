@@ -7,7 +7,7 @@ from actionlib.msg import TestAction, TestFeedback, TestResult
 
 def execute(goal):
     print 'got goal', goal.goal
-    
+
     for i in xrange(3):
         rospy.sleep(1)
         action_server.publish_feedback(TestFeedback(
@@ -15,7 +15,7 @@ def execute(goal):
         ))
         print 'sent feedback'
     rospy.sleep(1)
-    
+
     action_server.set_succeeded(TestResult(
         result=goal.goal + 1000,
     ))

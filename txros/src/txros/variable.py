@@ -10,7 +10,7 @@ class Event(object):
         self.id_generator = itertools.count()
         self._once = None
         self.times = 0
-    
+
     def run_and_watch(self, func):
         func()
         return self.watch(func)
@@ -24,28 +24,28 @@ class Event(object):
         return id
     def unwatch(self, id):
         self.observers.pop(id)
-    
+
     @property
     def once(self):
         res = self._once
         if res is None:
             res = self._once = Event()
         return res
-    
+
     def happened(self, *event):
         self.times += 1
-        
+
         once, self._once = self._once, None
-        
+
         for id, func in sorted(self.observers.iteritems()):
             try:
                 func(*event)
             except:
                 log.err(None, "Error while processing Event callbacks:")
-        
+
         if once is not None:
             once.happened(*event)
-    
+
     def get_deferred(self, timeout=None):
         once = self.once
         df = defer.Deferred()
@@ -64,16 +64,16 @@ class Variable(object):
         self.value = value
         self.changed = Event()
         self.transitioned = Event()
-    
+
     def set(self, value):
         if value == self.value:
             return
-        
+
         oldvalue = self.value
         self.value = value
         self.changed.happened(value)
         self.transitioned.happened(oldvalue, value)
-    
+
     def when_satisfies(self, func):
         res = Event()
         def _(value):
@@ -81,13 +81,13 @@ class Variable(object):
                 res.happened(value)
         self.changed.watch(_)
         return res
-    
+
     @defer.inlineCallbacks
     def get_when_satisfies(self, func):
         while True:
             if func(self.value):
                 defer.returnValue(self.value)
             yield self.changed.once.get_deferred()
-    
+
     def get_not_none(self):
         return self.get_when_satisfies(lambda val: val is not None)
