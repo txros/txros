@@ -94,7 +94,7 @@ def _step(cur, gen, currently_waiting_on, mine, df, has_been_cancelled):
             # confusing situation which results when returnValue() is
             # accidentally invoked from a different function, one that wasn't
             # decorated with @inlineCallbacks.
-
+            
             # The traceback starts in this frame (the one for
             # _inlineCallbacks); the next one down should be the application
             # code.
@@ -204,14 +204,14 @@ class AutoServerFactory(protocol.ServerFactory):
 def nonblocking_raw_input(prompt):
     class P(basic.LineOnlyReceiver):
         delimiter = '\n'
-    
+        
         def __init__(self, prompt):
             self._prompt = prompt
             self.df = defer.Deferred()
-    
+        
         def connectionMade(self):
             self.transport.write(self._prompt)
-    
+        
         def lineReceived(self, line):
             self.df.callback(line)
             self.transport.loseConnection()
@@ -227,7 +227,7 @@ class TimeoutError(Exception): pass
 @cancellableInlineCallbacks
 def wrap_timeout(df, duration, cancel_df_on_timeout=True):
     timeout = wall_sleep(duration)
-
+    
     try:
         result, index = yield defer.DeferredList([df, timeout], fireOnOneCallback=True, fireOnOneErrback=True)
     finally:
@@ -236,7 +236,7 @@ def wrap_timeout(df, duration, cancel_df_on_timeout=True):
             df.addErrback(lambda fail: fail.trap(defer.CancelledError))
         yield timeout.cancel()
         timeout.addErrback(lambda fail: fail.trap(defer.CancelledError))
-
+    
     if index == 1:
         raise TimeoutError()
     else:

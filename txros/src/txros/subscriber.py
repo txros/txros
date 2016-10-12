@@ -97,10 +97,10 @@ class Subscriber(object):
                                 self._callback(msg)
                             except:
                                 traceback.print_exc()
-
+                            
                             self._last_message = msg
                             self._last_message_time = self._node_handle.get_time()
-
+                            
                             old, self._message_dfs = self._message_dfs, []
                             for df in old:
                                 df.callback(msg)

@@ -11,7 +11,7 @@ from geometry_msgs.msg import Transform, TransformStamped, Quaternion, Vector3
 from std_msgs.msg import Header
 from tf import transformations
 
-from txros import NodeHandle, tf, util
+from txros import tf, util
 from txros.test import util as test_util
 
 

@@ -2,8 +2,6 @@
 
 import traceback
 
-from twisted.internet import reactor
-
 import genpy
 
 import txros

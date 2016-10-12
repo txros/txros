@@ -3,7 +3,7 @@ from __future__ import division
 from twisted.internet import defer, reactor
 from twisted.trial import unittest
 
-from txros import NodeHandle, util
+from txros import util
 
 
 class Test(unittest.TestCase):

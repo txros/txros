@@ -45,8 +45,8 @@ class Transform(object):
     @classmethod
     def from_Pose_message(cls, msg):
         return cls([msg.position.x, msg.position.y, msg.position.z],
-                   [msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w])
-
+            [msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w])
+    
     
     def __init__(self, p, q):
         self._p = numpy.array(p)

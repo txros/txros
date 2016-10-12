@@ -3,7 +3,7 @@ from __future__ import division
 import random
 import traceback
 
-from twisted.internet import defer, reactor
+from twisted.internet import defer
 
 from std_msgs.msg import Header
 from actionlib_msgs.msg import GoalID, GoalStatusArray
@@ -139,9 +139,11 @@ class ActionClient(object):
     
     @util.cancellableInlineCallbacks
     def wait_for_server(self):
-        while not (set(self._goal_pub.get_connections()) &
-                set(self._cancel_pub.get_connections()) &
-                set(self._status_sub.get_connections()) &
-                set(self._result_sub.get_connections()) &
-                set(self._feedback_sub.get_connections())):
+        while not (
+            set(self._goal_pub.get_connections()) &
+            set(self._cancel_pub.get_connections()) &
+            set(self._status_sub.get_connections()) &
+            set(self._result_sub.get_connections()) &
+            set(self._feedback_sub.get_connections())
+        ):
             yield util.wall_sleep(0.1) # XXX bad bad bad
