@@ -98,6 +98,11 @@ class Transform(object):
     def transform_quaternion(self, quaternion):
         return transformations.quaternion_multiply(self._q, quaternion)
 
+def _make_absolute(frame_id):
+    if not frame_id.startswith('/'):
+        return '/' + frame_id
+    return frame_id
+
 class TransformListener(object):
     def __init__(self, node_handle, history_length=genpy.Duration(10)):
         self._node_handle = node_handle
@@ -114,14 +119,9 @@ class TransformListener(object):
         self._tf_subscriber.shutdown()
     
     def _got_tfs(self, msg):
-        def make_absolute(frame_id):
-            if not frame_id.startswith('/'):
-                return '/' + frame_id
-            return frame_id
-        
         for transform in msg.transforms:
-            frame_id = make_absolute(transform.header.frame_id)
-            child_frame_id = make_absolute(transform.child_frame_id)
+            frame_id = _make_absolute(transform.header.frame_id)
+            child_frame_id = _make_absolute(transform.child_frame_id)
             
             l = self._tfs.setdefault(child_frame_id, [])
             
@@ -138,7 +138,7 @@ class TransformListener(object):
                 del l[:pos]
         
         for transform in msg.transforms:
-            frame_id = make_absolute(transform.header.frame_id)
+            frame_id = _make_absolute(transform.header.frame_id)
             
             dfs = self._dfs.pop(frame_id, {})
             for df in dfs.itervalues():
@@ -156,6 +156,8 @@ class TransformListener(object):
     
     @util.cancellableInlineCallbacks
     def get_transform(self, to_frame, from_frame, time=None):
+        to_frame = _make_absolute(to_frame)
+        from_frame = _make_absolute(from_frame)
         assert time is None or isinstance(time, genpy.Time)
         
         to_tfs = {to_frame: Transform.identity()} # x -> Transform from to_frame to x
