@@ -139,12 +139,20 @@ class SimpleActionServer(object):
     - implement optional callbacks for new goals
     - ensure headers are correct for each message
     '''
-    def __init__(self, node_handle, name, action_type):
+    def __init__(self, node_handle, name, action_type, goal_cb=None, preempt_cb=None):
+        self.started = False
         self._node_handle = node_handle
         self._name = name
 
         self.goal = None
         self.next_goal = None
+        self.cancel_requested = False
+
+        self.register_goal_callback(goal_cb)
+        self.register_preempt_callback(preempt_cb)
+
+        self.goal_cb = None
+        self.preempt_cb = None
 
         self.status_frequency = 5.0
 
@@ -158,6 +166,20 @@ class SimpleActionServer(object):
 
         self._goal_sub = self._node_handle.subscribe(self._name + '/goal', self._goal_type, self._goal_cb)
         self._cancel_sub = self._node_handle.subscribe(self._name + '/cancel', GoalID, self._cancel_cb)
+
+    def register_goal_callback(self, func):
+        self.goal_cb = func
+
+    def _process_goal_callback(self):
+        if self.goal_cb:
+            self.goal_cb()
+
+    def _process_preempt_callback(self):
+        if self.preempt_cb:
+            self.preempt_cb()
+
+    def register_preempt_callback(self, func):
+        self.preempt_cb = func
 
     def start(self):
         self.started = True
@@ -177,6 +199,7 @@ class SimpleActionServer(object):
         if self.goal:
             self.set_preempted(text='New goal accepted in simple action server')
         self.goal = self.next_goal
+        self.cancel_requested = False
         self.next_goal = None
         self.goal.status = GoalStatus.ACTIVE
         self._publish_status()
@@ -186,7 +209,10 @@ class SimpleActionServer(object):
         return self.next_goal is not None
 
     def is_preempt_requested(self):
-        return self.next_goal is not None and self.is_active()
+        return (self.next_goal and self.goal) or self.is_cancel_requested()
+
+    def is_cancel_requested(self):
+        return self.goal is not None and self.cancel_requested
 
     def is_active(self):
         return self.goal is not None
@@ -247,7 +273,18 @@ class SimpleActionServer(object):
             yield self._node_handle.sleep(1.0 / self.status_frequency)
 
     def _cancel_cb(self, msg):
-        print msg
+        if self.next_goal and msg.id == self.next_goal.goal.goal_id.id:  # Cancel next_goal
+            self.next_goal.status = GoalStatus.RECALLED
+            self.next_goal.status_text = 'Goal cancled'
+            result_msg = self._result_type()
+            result_msg.status = self.next_goal.status_msg()
+            self._result_pub.publish(result_msg)
+            self._publish_status()
+            self.next_goal = None
+            return
+        elif self.goal and msg.id == self.goal.goal.goal_id.id and not self.cancel_requested:
+            self.cancel_requested = True
+            self._process_preempt_callback()
 
     @util.cancellableInlineCallbacks
     def _goal_cb(self, msg):
@@ -281,6 +318,10 @@ class SimpleActionServer(object):
                 self._publish_status()
         self.next_goal = new_goal
         self._publish_status()
+        if self.goal:
+            self._process_preempt_callback()
+        else:
+            self._process_goal_callback()
 
 
 class ActionClient(object):
