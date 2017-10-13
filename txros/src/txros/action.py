@@ -273,7 +273,23 @@ class SimpleActionServer(object):
             yield self._node_handle.sleep(1.0 / self.status_frequency)
 
     def _cancel_cb(self, msg):
-        if self.next_goal and msg.id == self.next_goal.goal.goal_id.id:  # Cancel next_goal
+        cancel_current = False
+        cancel_next = False
+        if msg.stamp != genpy.Time():
+            if self.next_goal and self.next_goal.goal_id.stamp < msg.stamp:
+                cancel_next = True
+            if self.goal and self.goal.goal_id.stamp < msg.stamp:
+                cancel_current = True
+
+        if msg.id == '' and msg.stamp == genpy.Time():
+            cancel_current = self.goal is not None
+            cancel_next = self.next_goal is not None
+        elif msg.id != '':
+            if self.goal and msg.id == self.goal.goal_id.id:
+                cancel_current = True
+            if self.next_goal and msg.id == self.next_goal.id.id:
+                cancel_next = True
+        if cancel_next:
             self.next_goal.status = GoalStatus.RECALLED
             self.next_goal.status_text = 'Goal cancled'
             result_msg = self._result_type()
@@ -281,8 +297,7 @@ class SimpleActionServer(object):
             self._result_pub.publish(result_msg)
             self._publish_status()
             self.next_goal = None
-            return
-        elif self.goal and msg.id == self.goal.goal.goal_id.id and not self.cancel_requested:
+        if cancel_current and not self.cancel_requested:
             self.cancel_requested = True
             self._process_preempt_callback()
 
