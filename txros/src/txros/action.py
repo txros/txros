@@ -308,15 +308,17 @@ class SimpleActionServer(object):
         new_goal = Goal(msg)
         if new_goal.goal is None:  # If goal field is empty, invalid goal
             defer.returnValue(None)
-        if (self.goal and new_goal == self.goal) or (self.next_goal and new_goal == self.next_goal):  # Throw out duplicate goals
+        # Throw out duplicate goals
+        if (self.goal and new_goal == self.goal) or (self.next_goal and new_goal == self.next_goal):
             defer.returnValue(None)
         now = yield self._node_handle.get_time()
-        if new_goal.goal.goal_id.stamp == genpy.Time(): # If time is not set, replace with current time
+        if new_goal.goal.goal_id.stamp == genpy.Time():  # If time is not set, replace with current time
             new_goal.goal.goal_id.stamp = now
         if self.next_goal is not None:  # If another goal is queued, handle conflict
-            if new_goal.goal.goal_id.stamp < self.next_goal.goal.goal_id.stamp:  # next_goal is later, so reject new_goal
+            # If next goal is later, rejct new goal
+            if new_goal.goal.goal_id.stamp < self.next_goal.goal.goal_id.stamp:
                 new_goal.status = GoalStatus.REJECTED
-                new_goal.status_text = "This goal was canceled because another goal was received by the simple action server"
+                new_goal.status_text = "canceled because another goal was received by the simple action server"
                 result_msg = self._result_type()
                 result_msg.header.stamp = now
                 result_msg.status = new_goal.status_msg()
