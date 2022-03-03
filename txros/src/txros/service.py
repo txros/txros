@@ -5,11 +5,10 @@ import StringIO
 
 from twisted.internet import defer, error
 
-from txros import util, tcpros
+from . import util, tcpros
 
 
 class Service(object):
-
     def __init__(self, node_handle, name, service_type, callback):
         self._node_handle = node_handle
         self._name = self._node_handle.resolve_name(name)
@@ -23,13 +22,18 @@ class Service(object):
     @util.cancellableInlineCallbacks
     def _think(self):
         try:
-            assert ('service', self._name) not in self._node_handle._tcpros_handlers
-            self._node_handle._tcpros_handlers['service', self._name] = self._handle_tcpros_conn
+            assert ("service", self._name) not in self._node_handle._tcpros_handlers
+            self._node_handle._tcpros_handlers[
+                "service", self._name
+            ] = self._handle_tcpros_conn
             try:
                 while True:
                     try:
                         yield self._node_handle._master_proxy.registerService(
-                            self._name, self._node_handle._tcpros_server_uri, self._node_handle._xmlrpc_server_uri)
+                            self._name,
+                            self._node_handle._tcpros_server_uri,
+                            self._node_handle._xmlrpc_server_uri,
+                        )
                     except Exception:
                         traceback.print_exc()
                     else:
@@ -38,10 +42,11 @@ class Service(object):
             finally:
                 try:
                     yield self._node_handle._master_proxy.unregisterService(
-                        self._name, self._node_handle._tcpros_server_uri)
+                        self._name, self._node_handle._tcpros_server_uri
+                    )
                 except Exception:
                     traceback.print_exc()
-                del self._node_handle._tcpros_handlers['service', self._name]
+                del self._node_handle._tcpros_handlers["service", self._name]
         finally:
             self._shutdown_finished.callback(None)
 
@@ -56,13 +61,17 @@ class Service(object):
         try:
             # check headers
 
-            conn.sendString(tcpros.serialize_dict(dict(
-                callerid=self._node_handle._name,
-                type=self._type._type,
-                md5sum=self._type._md5sum,
-                request_type=self._type._request_class._type,
-                response_type=self._type._response_class._type,
-            )))
+            conn.sendString(
+                tcpros.serialize_dict(
+                    dict(
+                        callerid=self._node_handle._name,
+                        type=self._type._type,
+                        md5sum=self._type._md5sum,
+                        request_type=self._type._request_class._type,
+                        response_type=self._type._response_class._type,
+                    )
+                )
+            )
 
             while True:
                 string = yield conn.receiveString()

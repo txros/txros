@@ -4,21 +4,20 @@ import StringIO
 
 from twisted.internet import defer, reactor, endpoints
 
-from txros import util, tcpros, rosxmlrpc
+from . import util, tcpros, rosxmlrpc
 
 
 class ServiceError(Exception):
-
     def __init__(self, message):
         self._message = message
 
     def __str__(self):
-        return 'ServiceError(%r)' % (self._message,)
+        return "ServiceError(%r)" % (self._message,)
+
     __repr__ = __str__
 
 
 class ServiceClient(object):
-
     def __init__(self, node_handle, name, service_type):
         self._node_handle = node_handle
         self._name = self._node_handle.resolve_name(name)
@@ -28,21 +27,26 @@ class ServiceClient(object):
     def __call__(self, req):
         serviceUrl = yield self._node_handle._master_proxy.lookupService(self._name)
 
-        protocol, rest = serviceUrl.split('://', 1)
-        host, port_str = rest.rsplit(':', 1)
+        protocol, rest = serviceUrl.split("://", 1)
+        host, port_str = rest.rsplit(":", 1)
         port = int(port_str)
 
-        assert protocol == 'rosrpc'
+        assert protocol == "rosrpc"
 
         conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(
-            util.AutoServerFactory(lambda addr: tcpros.Protocol()))
+            util.AutoServerFactory(lambda addr: tcpros.Protocol())
+        )
         try:
-            conn.sendString(tcpros.serialize_dict(dict(
-                callerid=self._node_handle._name,
-                service=self._name,
-                md5sum=self._type._md5sum,
-                type=self._type._type,
-            )))
+            conn.sendString(
+                tcpros.serialize_dict(
+                    dict(
+                        callerid=self._node_handle._name,
+                        service=self._name,
+                        md5sum=self._type._md5sum,
+                        type=self._type._type,
+                    )
+                )
+            )
 
             tcpros.deserialize_dict((yield conn.receiveString()))
 
@@ -67,7 +71,7 @@ class ServiceClient(object):
             try:
                 yield self._node_handle._master_proxy.lookupService(self._name)
             except rosxmlrpc.Error:
-                yield util.wall_sleep(.1)  # XXX bad
+                yield util.wall_sleep(0.1)  # XXX bad
                 continue
             else:
                 return
