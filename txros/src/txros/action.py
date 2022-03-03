@@ -1,4 +1,4 @@
-from __future__ import division
+from __future__ import annotations
 
 import random
 import traceback
@@ -13,12 +13,11 @@ from txros import util
 
 
 class GoalManager(object):
-
-    def __init__(self, action_client, goal):
+    def __init__(self, action_client: ActionClient, goal: Goal):
         self._action_client = action_client
         self._goal = goal
 
-        self._goal_id = '%016x' % (random.randrange(2 ** 64),)
+        self._goal_id = "%016x" % (random.randrange(2**64),)
 
         assert self._goal_id not in self._action_client._goal_managers
         self._action_client._goal_managers[self._goal_id] = self
@@ -35,16 +34,18 @@ class GoalManager(object):
 
             yield self._action_client.wait_for_server()
 
-            self._action_client._goal_pub.publish(self._action_client._goal_type(
-                header=Header(
-                    stamp=now,
-                ),
-                goal_id=GoalID(
-                    stamp=now,
-                    id=self._goal_id,
-                ),
-                goal=self._goal,
-            ))
+            self._action_client._goal_pub.publish(
+                self._action_client._goal_type(
+                    header=Header(
+                        stamp=now,
+                    ),
+                    goal_id=GoalID(
+                        stamp=now,
+                        id=self._goal_id,
+                    ),
+                    goal=self._goal,
+                )
+            )
         except:
             traceback.print_exc()
 
@@ -75,35 +76,64 @@ class GoalManager(object):
         return df
 
     def cancel(self):
-        self._action_client._cancel_pub.publish(GoalID(
-            stamp=genpy.Time(0, 0),
-            id=self._goal_id,
-        ))
+        self._action_client._cancel_pub.publish(
+            GoalID(
+                stamp=genpy.Time(0, 0),
+                id=self._goal_id,
+            )
+        )
 
         # XXX update state
 
         # self.forget()
 
     def forget(self):
-        '''leave action running, stop listening'''
-
+        """
+        Leave action running, stop listening
+        """
         if self._goal_id in self._action_client._goal_managers:
             del self._action_client._goal_managers[self._goal_id]
 
 
 class Goal(object):
-    def __init__(self, goal_msg, status=GoalStatus.PENDING, status_text=''):
-        if goal_msg.goal_id.id == '':
+    """
+    Implementation of a goal object in the txros adaptation of the Simple Action
+    Server.
+
+    Parameters:
+        goal: GoalStatus - The original goal message which constructs this class
+        status: uint8 - An enum representing the status of 
+        status_text: str - A string representing the status of the goal
+    """
+
+    def __init__(self,
+                 goal_msg: GoalStatus,
+                 status: int = GoalStatus.PENDING,
+                 status_text: str = ""
+    ):
+        if goal_msg.goal_id.id == "":
             self.goal = None
         self.goal = goal_msg
         self.status = status
-        self.status_text = ''
+        self.status_text = status_text
 
     def __eq__(self, rhs):
+        assert isinstance(self.goal, GoalStatus)
         return self.goal.goal_id.id == rhs.goal.goal_id.id
 
-    def status_msg(self):
+    def status_msg(self) -> GoalStatus:
+        """
+        Constructs a GoalStatus method from the Goal class.
+
+        Returns:
+            GoalStatus - The constructed message.
+        """
         msg = GoalStatus()
+
+        # Type checking
+        assert isinstance(self.goal, GoalStatus)
+
+        # Assemble message
         msg.goal_id = self.goal.goal_id
         msg.status = self.status
         msg.text = self.status_text
@@ -111,7 +141,7 @@ class Goal(object):
 
 
 class SimpleActionServer(object):
-    '''
+    """
     A simplified implementation of an action server. At a given time, can only at most
     have a current goal and a next goal. If new goals arrive with one already queued
     to be next, the goal with the greater timestamp will bump to other.
@@ -138,7 +168,8 @@ class SimpleActionServer(object):
     TODO:
     - implement optional callbacks for new goals
     - ensure headers are correct for each message
-    '''
+    """
+
     def __init__(self, node_handle, name, action_type, goal_cb=None, preempt_cb=None):
         self.started = False
         self._node_handle = node_handle
@@ -160,12 +191,22 @@ class SimpleActionServer(object):
         self._result_type = type(action_type().action_result)
         self._feedback_type = type(action_type().action_feedback)
 
-        self._status_pub = self._node_handle.advertise(self._name + '/status', GoalStatusArray)
-        self._result_pub = self._node_handle.advertise(self._name + '/result', self._result_type)
-        self._feedback_pub = self._node_handle.advertise(self._name + '/feedback', self._feedback_type)
+        self._status_pub = self._node_handle.advertise(
+            self._name + "/status", GoalStatusArray
+        )
+        self._result_pub = self._node_handle.advertise(
+            self._name + "/result", self._result_type
+        )
+        self._feedback_pub = self._node_handle.advertise(
+            self._name + "/feedback", self._feedback_type
+        )
 
-        self._goal_sub = self._node_handle.subscribe(self._name + '/goal', self._goal_type, self._goal_cb)
-        self._cancel_sub = self._node_handle.subscribe(self._name + '/cancel', GoalID, self._cancel_cb)
+        self._goal_sub = self._node_handle.subscribe(
+            self._name + "/goal", self._goal_type, self._goal_cb
+        )
+        self._cancel_sub = self._node_handle.subscribe(
+            self._name + "/cancel", GoalID, self._cancel_cb
+        )
 
     def register_goal_callback(self, func):
         self.goal_cb = func
@@ -192,12 +233,16 @@ class SimpleActionServer(object):
 
     def accept_new_goal(self):
         if not self.started:
-            print('SIMPLE ACTION SERVER: attempted to accept_new_goal without being started')
+            print(
+                "SIMPLE ACTION SERVER: attempted to accept_new_goal without being started"
+            )
             return None
         if not self.next_goal:
-            print('SIMPLE ACTION SERVER: attempted to accept_new_goal when no new goal is available')
+            print(
+                "SIMPLE ACTION SERVER: attempted to accept_new_goal when no new goal is available"
+            )
         if self.goal:
-            self.set_preempted(text='New goal accepted in simple action server')
+            self.set_preempted(text="New goal accepted in simple action server")
         self.goal = self.next_goal
         self.cancel_requested = False
         self.next_goal = None
@@ -217,12 +262,12 @@ class SimpleActionServer(object):
     def is_active(self):
         return self.goal is not None
 
-    def _set_result(self, status=GoalStatus.SUCCEEDED, text='', result=None):
+    def _set_result(self, status=GoalStatus.SUCCEEDED, text="", result=None):
         if not self.started:
-            print('SimpleActionServer: attempted to set_succeeded before starting')
+            print("SimpleActionServer: attempted to set_succeeded before starting")
             return
         if not self.goal:
-            print('SimpleActionServer: attempted to set_succeeded without a goal')
+            print("SimpleActionServer: attempted to set_succeeded without a goal")
             return
         self.goal.status = status
         self.goal.status_text = text
@@ -234,21 +279,21 @@ class SimpleActionServer(object):
         self._result_pub.publish(result_msg)
         self.goal = None
 
-    def set_succeeded(self, result=None, text=''):
+    def set_succeeded(self, result=None, text=""):
         self._set_result(status=GoalStatus.SUCCEEDED, text=text, result=result)
 
-    def set_aborted(self, result=None, text=''):
+    def set_aborted(self, result=None, text=""):
         self._set_result(status=GoalStatus.ABORTED, text=text, result=result)
 
-    def set_preempted(self, result=None, text=''):
+    def set_preempted(self, result=None, text=""):
         self._set_result(status=GoalStatus.PREEMPTED, text=text, result=result)
 
     def publish_feedback(self, feedback=None):
         if not self.started:
-            print('SimpleActionServer: attempted to publish_feedback before starting')
+            print("SimpleActionServer: attempted to publish_feedback before starting")
             return
         if not self.goal:
-            print('SimpleActionServer: attempted to publish_feedback without a goal')
+            print("SimpleActionServer: attempted to publish_feedback without a goal")
             return
         feedback_msg = self._feedback_type()
         feedback_msg.status = self.goal.status_msg()
@@ -281,17 +326,17 @@ class SimpleActionServer(object):
             if self.goal and self.goal.goal_id.stamp < msg.stamp:
                 cancel_current = True
 
-        if msg.id == '' and msg.stamp == genpy.Time():
+        if msg.id == "" and msg.stamp == genpy.Time():
             cancel_current = self.goal is not None
             cancel_next = self.next_goal is not None
-        elif msg.id != '':
+        elif msg.id != "":
             if self.goal and msg.id == self.goal.goal_id.id:
                 cancel_current = True
             if self.next_goal and msg.id == self.next_goal.id.id:
                 cancel_next = True
         if cancel_next:
             self.next_goal.status = GoalStatus.RECALLED
-            self.next_goal.status_text = 'Goal cancled'
+            self.next_goal.status_text = "Goal cancled"
             result_msg = self._result_type()
             result_msg.status = self.next_goal.status_msg()
             self._result_pub.publish(result_msg)
@@ -309,10 +354,14 @@ class SimpleActionServer(object):
         if new_goal.goal is None:  # If goal field is empty, invalid goal
             defer.returnValue(None)
         # Throw out duplicate goals
-        if (self.goal and new_goal == self.goal) or (self.next_goal and new_goal == self.next_goal):
+        if (self.goal and new_goal == self.goal) or (
+            self.next_goal and new_goal == self.next_goal
+        ):
             defer.returnValue(None)
         now = yield self._node_handle.get_time()
-        if new_goal.goal.goal_id.stamp == genpy.Time():  # If time is not set, replace with current time
+        if (
+            new_goal.goal.goal_id.stamp == genpy.Time()
+        ):  # If time is not set, replace with current time
             new_goal.goal.goal_id.stamp = now
         if self.next_goal is not None:  # If another goal is queued, handle conflict
             # If next goal is later, rejct new goal
@@ -327,7 +376,7 @@ class SimpleActionServer(object):
                 defer.returnValue(None)
             else:  # New goal is later so reject current next_goal
                 self.next_goal.status = GoalStatus.REJECTED
-                self.next_goal.status_text = 'Goal bumped by newer goal'
+                self.next_goal.status_text = "Goal bumped by newer goal"
                 result_msg = self._result_type()
                 result_msg.header.stamp = now
                 result_msg.status = self.next_goal.status_msg()
@@ -342,7 +391,6 @@ class SimpleActionServer(object):
 
 
 class ActionClient(object):
-
     def __init__(self, node_handle, name, action_type):
         self._node_handle = node_handle
         self._name = name
@@ -353,14 +401,19 @@ class ActionClient(object):
 
         self._goal_managers = {}
 
-        self._goal_pub = self._node_handle.advertise(self._name + '/goal', self._goal_type)
-        self._cancel_pub = self._node_handle.advertise(self._name + '/cancel', GoalID)
-        self._status_sub = self._node_handle.subscribe(self._name + '/status', GoalStatusArray, self._status_callback)
-        self._result_sub = self._node_handle.subscribe(self._name + '/result', self._result_type, self._result_callback)
+        self._goal_pub = self._node_handle.advertise(
+            self._name + "/goal", self._goal_type
+        )
+        self._cancel_pub = self._node_handle.advertise(self._name + "/cancel", GoalID)
+        self._status_sub = self._node_handle.subscribe(
+            self._name + "/status", GoalStatusArray, self._status_callback
+        )
+        self._result_sub = self._node_handle.subscribe(
+            self._name + "/result", self._result_type, self._result_callback
+        )
         self._feedback_sub = self._node_handle.subscribe(
-            self._name + '/feedback',
-            self._feedback_type,
-            self._feedback_callback)
+            self._name + "/feedback", self._feedback_type, self._feedback_callback
+        )
 
     def _status_callback(self, msg):
         for status in msg.status_list:
@@ -382,24 +435,28 @@ class ActionClient(object):
         return GoalManager(self, goal)
 
     def cancel_all_goals(self):
-        self._cancel_pub.publish(GoalID(
-            stamp=genpy.Time(0, 0),
-            id='',
-        ))
+        self._cancel_pub.publish(
+            GoalID(
+                stamp=genpy.Time(0, 0),
+                id="",
+            )
+        )
 
     def cancel_goals_at_and_before_time(self, time):
-        self._cancel_pub.publish(GoalID(
-            stamp=time,
-            id='',
-        ))
+        self._cancel_pub.publish(
+            GoalID(
+                stamp=time,
+                id="",
+            )
+        )
 
     @util.cancellableInlineCallbacks
     def wait_for_server(self):
         while not (
-            set(self._goal_pub.get_connections()) &
-            set(self._cancel_pub.get_connections()) &
-            set(self._status_sub.get_connections()) &
-            set(self._result_sub.get_connections()) &
-            set(self._feedback_sub.get_connections())
+            set(self._goal_pub.get_connections())
+            & set(self._cancel_pub.get_connections())
+            & set(self._status_sub.get_connections())
+            & set(self._result_sub.get_connections())
+            & set(self._feedback_sub.get_connections())
         ):
             yield util.wall_sleep(0.1)  # XXX bad bad bad
