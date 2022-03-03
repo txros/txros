@@ -20,7 +20,7 @@ from roscpp.srv import (
 )
 from rosgraph_msgs.msg import Clock
 
-from txros import util, tcpros, publisher, rosxmlrpc, service, serviceclient, subscriber
+from . import util, tcpros, publisher, rosxmlrpc, service, serviceclient, subscriber
 
 
 class _XMLRPCSlave(xmlrpc.XMLRPC):

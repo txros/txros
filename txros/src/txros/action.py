@@ -9,7 +9,7 @@ from std_msgs.msg import Header
 from actionlib_msgs.msg import GoalID, GoalStatus, GoalStatusArray
 import genpy
 
-from txros import util
+from . import util
 
 
 class GoalManager:
