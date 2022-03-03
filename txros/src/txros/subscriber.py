@@ -5,11 +5,10 @@ import traceback
 from twisted.web import xmlrpc
 from twisted.internet import defer, reactor, endpoints, error
 
-from txros import rosxmlrpc, tcpros, util
+from . import rosxmlrpc, tcpros, util
 
 
 class Subscriber(object):
-
     def __init__(self, node_handle, name, message_type, callback=lambda message: None):
         self._node_handle = node_handle
         self._name = self._node_handle.resolve_name(name)
@@ -29,13 +28,23 @@ class Subscriber(object):
     @util.cancellableInlineCallbacks
     def _think(self):
         try:
-            assert ('publisherUpdate', self._name) not in self._node_handle._xmlrpc_handlers
-            self._node_handle._xmlrpc_handlers['publisherUpdate', self._name] = self._handle_publisher_list
+            assert (
+                "publisherUpdate",
+                self._name,
+            ) not in self._node_handle._xmlrpc_handlers
+            self._node_handle._xmlrpc_handlers[
+                "publisherUpdate", self._name
+            ] = self._handle_publisher_list
             try:
                 while True:
                     try:
-                        publishers = yield self._node_handle._master_proxy.registerSubscriber(
-                            self._name, self._type._type, self._node_handle._xmlrpc_server_uri)
+                        publishers = (
+                            yield self._node_handle._master_proxy.registerSubscriber(
+                                self._name,
+                                self._type._type,
+                                self._node_handle._xmlrpc_server_uri,
+                            )
+                        )
                     except Exception:
                         traceback.print_exc()
                     else:
@@ -45,10 +54,11 @@ class Subscriber(object):
             finally:
                 try:
                     yield self._node_handle._master_proxy.unregisterSubscriber(
-                        self._name, self._node_handle._xmlrpc_server_uri)
+                        self._name, self._node_handle._xmlrpc_server_uri
+                    )
                 except Exception:
                     traceback.print_exc()
-                del self._node_handle._xmlrpc_handlers['publisherUpdate', self._name]
+                del self._node_handle._xmlrpc_handlers["publisherUpdate", self._name]
         finally:
             self._shutdown_finished.callback(None)
 
@@ -71,28 +81,33 @@ class Subscriber(object):
         return res
 
     def get_connections(self):
-        return list(self._connections.itervalues())
+        return list(self._connections.values())
 
     @util.cancellableInlineCallbacks
     def _publisher_thread(self, url):
         while True:
             try:
                 proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(url), self._node_handle._name)
-                value = yield proxy.requestTopic(self._name, [['TCPROS']])
+                value = yield proxy.requestTopic(self._name, [["TCPROS"]])
 
                 protocol, host, port = value
                 conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(
-                    util.AutoServerFactory(lambda addr: tcpros.Protocol()))
+                    util.AutoServerFactory(lambda addr: tcpros.Protocol())
+                )
                 try:
-                    conn.sendString(tcpros.serialize_dict(dict(
-                        message_definition=self._type._full_text,
-                        callerid=self._node_handle._name,
-                        topic=self._name,
-                        md5sum=self._type._md5sum,
-                        type=self._type._type,
-                    )))
+                    conn.sendString(
+                        tcpros.serialize_dict(
+                            dict(
+                                message_definition=self._type._full_text,
+                                callerid=self._node_handle._name,
+                                topic=self._name,
+                                md5sum=self._type._md5sum,
+                                type=self._type._type,
+                            )
+                        )
+                    )
                     header = tcpros.deserialize_dict((yield conn.receiveString()))
-                    self._connections[conn] = header.get('callerid', None)
+                    self._connections[conn] = header.get("callerid", None)
                     try:
                         while True:
                             data = yield conn.receiveString()
@@ -112,19 +127,32 @@ class Subscriber(object):
                         del self._connections[conn]
                 finally:
                     conn.transport.loseConnection()
-            except (error.ConnectionDone, error.ConnectionLost, error.ConnectionRefusedError):
+            except (
+                error.ConnectionDone,
+                error.ConnectionLost,
+                error.ConnectionRefusedError,
+            ):
                 pass
             except Exception:
                 traceback.print_exc()
 
-            yield util.wall_sleep(1)  # pause so that we don't repeatedly reconnect immediately on failure
+            yield util.wall_sleep(
+                1
+            )  # pause so that we don't repeatedly reconnect immediately on failure
 
     def _handle_publisher_list(self, publishers):
-        new = dict((k, self._publisher_threads.pop(k) if k in self._publisher_threads else self._publisher_thread(k))
-                   for k in publishers)
-        for k, v in self._publisher_threads.iteritems():
+        new = dict(
+            (
+                k,
+                self._publisher_threads.pop(k)
+                if k in self._publisher_threads
+                else self._publisher_thread(k),
+            )
+            for k in publishers
+        )
+        for k, v in self._publisher_threads.items():
             v.cancel()
             v.addErrback(lambda fail: fail.trap(defer.CancelledError))
         self._publisher_threads = new
 
-        return 1, 'success', False
+        return 1, "success", False
