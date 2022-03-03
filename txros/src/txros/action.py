@@ -12,7 +12,7 @@ import genpy
 from txros import util
 
 
-class GoalManager(object):
+class GoalManager:
     def __init__(self, action_client: ActionClient, goal: Goal):
         self._action_client = action_client
         self._goal = goal
@@ -95,14 +95,14 @@ class GoalManager(object):
             del self._action_client._goal_managers[self._goal_id]
 
 
-class Goal(object):
+class Goal:
     """
     Implementation of a goal object in the txros adaptation of the Simple Action
     Server.
 
     Parameters:
         goal: GoalStatus - The original goal message which constructs this class
-        status: uint8 - An enum representing the status of 
+        status: uint8 - An enum representing the status of
         status_text: str - A string representing the status of the goal
     """
 
@@ -140,7 +140,7 @@ class Goal(object):
         return msg
 
 
-class SimpleActionServer(object):
+class SimpleActionServer:
     """
     A simplified implementation of an action server. At a given time, can only at most
     have a current goal and a next goal. If new goals arrive with one already queued
@@ -390,7 +390,7 @@ class SimpleActionServer(object):
             self._process_goal_callback()
 
 
-class ActionClient(object):
+class ActionClient:
     def __init__(self, node_handle, name, action_type):
         self._node_handle = node_handle
         self._name = name

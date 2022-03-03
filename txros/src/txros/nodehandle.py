@@ -12,36 +12,40 @@ from twisted.web import server, xmlrpc
 from twisted.internet import defer, error, reactor
 
 import genpy
-from roscpp.srv import GetLoggers, GetLoggersResponse, SetLoggerLevel, SetLoggerLevelResponse
+from roscpp.srv import (
+    GetLoggers,
+    GetLoggersResponse,
+    SetLoggerLevel,
+    SetLoggerLevelResponse,
+)
 from rosgraph_msgs.msg import Clock
 
 from txros import util, tcpros, publisher, rosxmlrpc, service, serviceclient, subscriber
 
 
 class _XMLRPCSlave(xmlrpc.XMLRPC):
-
     def __init__(self, node_handle):
         xmlrpc.XMLRPC.__init__(self)
         self._node_handle = node_handle
 
     def __getattr__(self, attr):
-        if attr.startswith('xmlrpc_'):
-            print attr, 'not implemented'
+        if attr.startswith("xmlrpc_"):
+            print(attr, "not implemented")
         raise AttributeError(attr)
 
     def xmlrpc_getBusStats(self, caller_id):
-        return 1, 'success', [[], [], []]  # XXX
+        return 1, "success", [[], [], []]  # XXX
 
     def xmlrpc_getBusInfo(self, caller_id):
         # list of (connectionId, destinationId, direction, transport, topic, connected)
-        return 1, 'success', []  # XXX
+        return 1, "success", []  # XXX
 
     def xmlrpc_getMasterUri(self, caller_id):
-        return 1, 'success', self._node_handle._master_uri
+        return 1, "success", self._node_handle._master_uri
 
     @util.cancellableInlineCallbacks
-    def xmlrpc_shutdown(self, caller_id, msg=''):
-        print 'Shutdown requested. Reason:', repr(msg)
+    def xmlrpc_shutdown(self, caller_id, msg=""):
+        print("Shutdown requested. Reason:", repr(msg))
         # XXX should somehow tell/wait for user code to cleanly exit here, e.g. by .cancel()ing main coroutine
         yield self._node_handle.shutdown()
 
@@ -49,40 +53,43 @@ class _XMLRPCSlave(xmlrpc.XMLRPC):
         def _kill_soon():
             yield util.wall_sleep(0)
             os._exit(0)
+
         _kill_soon()
-        defer.returnValue((1, 'success', False))
+        defer.returnValue((1, "success", False))
 
     def xmlrpc_getPid(self, caller_id):
-        return 1, 'success', os.getpid()
+        return 1, "success", os.getpid()
 
     def xmlrpc_getSubscriptions(self, caller_id):
-        return 1, 'success', []  # XXX
+        return 1, "success", []  # XXX
 
     def xmlrpc_getPublications(self, caller_id):
-        return 1, 'success', []  # XXX
+        return 1, "success", []  # XXX
 
     def xmlrpc_paramUpdate(self, parameter_key, parameter_value):
-        return 1, 'success', False  # XXX
+        return 1, "success", False  # XXX
 
     def xmlrpc_publisherUpdate(self, caller_id, topic, publishers):
-        return self._node_handle._xmlrpc_handlers.get(('publisherUpdate', topic),
-                                                      lambda _: (1, 'success', True))(publishers)
+        return self._node_handle._xmlrpc_handlers.get(
+            ("publisherUpdate", topic), lambda _: (1, "success", True)
+        )(publishers)
 
     def xmlrpc_requestTopic(self, caller_id, topic, protocols):
-        return self._node_handle._xmlrpc_handlers.get(('requestTopic', topic),
-                                                      lambda _: (-1, "Not a publisher of [%s]" % topic, []))(protocols)
+        return self._node_handle._xmlrpc_handlers.get(
+            ("requestTopic", topic),
+            lambda _: (-1, "Not a publisher of [%s]" % topic, []),
+        )(protocols)
 
 
-class NodeHandle(object):
-
+class NodeHandle:
     @classmethod
     @util.cancellableInlineCallbacks
     def from_argv_with_remaining(cls, default_name, argv=sys.argv, anonymous=False):
         res = [argv[0]]
         remappings = {}
         for arg in argv[1:]:
-            if ':=' in arg:
-                before, after = arg.split(':=')
+            if ":=" in arg:
+                before, after = arg.split(":=")
                 assert before not in remappings
                 remappings[before] = after
             else:
@@ -90,35 +97,50 @@ class NodeHandle(object):
 
         name = default_name
         if anonymous:
-            name = name + '_' + '%016x' % (random.randrange(2 ** 64),)
-        if '__name' in remappings:
-            name = remappings['__name']
+            name = name + "_" + "%016x" % (random.randrange(2**64),)
+        if "__name" in remappings:
+            name = remappings["__name"]
 
         addr = socket.gethostname()  # could be a bit smarter
-        if 'ROS_IP' in os.environ:
-            addr = os.environ['ROS_IP']
-        if 'ROS_HOSTNAME' in os.environ:
-            addr = os.environ['ROS_HOSTNAME']
-        if '__ip' in remappings:
-            addr = remappings['__ip']
-        if '__hostname' in remappings:
-            addr = remappings['__hostname']
+        if "ROS_IP" in os.environ:
+            addr = os.environ["ROS_IP"]
+        if "ROS_HOSTNAME" in os.environ:
+            addr = os.environ["ROS_HOSTNAME"]
+        if "__ip" in remappings:
+            addr = remappings["__ip"]
+        if "__hostname" in remappings:
+            addr = remappings["__hostname"]
 
         master_uri = None
-        if 'ROS_MASTER_URI' in os.environ:
-            master_uri = os.environ['ROS_MASTER_URI']
-        if '__master' in remappings:
-            master_uri = remappings['__master']
+        if "ROS_MASTER_URI" in os.environ:
+            master_uri = os.environ["ROS_MASTER_URI"]
+        if "__master" in remappings:
+            master_uri = remappings["__master"]
         if master_uri is None:
-            raise ValueError('either ROS_MASTER_URI variable or __master argument has to be provided')
+            raise ValueError(
+                "either ROS_MASTER_URI variable or __master argument has to be provided"
+            )
 
-        ns = ''
-        if 'ROS_NAMESPACE' in os.environ:
-            ns = os.environ['ROS_NAMESPACE']
-        if '__ns' in remappings:
-            ns = remappings['__ns']
+        ns = ""
+        if "ROS_NAMESPACE" in os.environ:
+            ns = os.environ["ROS_NAMESPACE"]
+        if "__ns" in remappings:
+            ns = remappings["__ns"]
 
-        defer.returnValue(((yield cls(ns=ns, name=name, addr=addr, master_uri=master_uri, remappings=remappings)), res))
+        defer.returnValue(
+            (
+                (
+                    yield cls(
+                        ns=ns,
+                        name=name,
+                        addr=addr,
+                        master_uri=master_uri,
+                        remappings=remappings,
+                    )
+                ),
+                res,
+            )
+        )
 
     @classmethod
     @util.cancellableInlineCallbacks
@@ -133,15 +155,15 @@ class NodeHandle(object):
         self = object.__new__(cls)
 
         if ns:
-            assert ns[0] == '/'
-        assert not ns.endswith('/')
+            assert ns[0] == "/"
+        assert not ns.endswith("/")
         self._ns = ns  # valid values: '', '/a', '/a/b'
 
-        assert '/' not in name
-        self._name = self._ns + '/' + name
+        assert "/" not in name
+        self._name = self._ns + "/" + name
 
         self._shutdown_callbacks = set()
-        reactor.addSystemEventTrigger('before', 'shutdown', self.shutdown)
+        reactor.addSystemEventTrigger("before", "shutdown", self.shutdown)
 
         self._addr = addr
         self._master_uri = master_uri
@@ -153,7 +175,10 @@ class NodeHandle(object):
         self._xmlrpc_handlers = {}
         self._xmlrpc_server = reactor.listenTCP(0, server.Site(_XMLRPCSlave(self)))
         self._shutdown_callbacks.add(self._xmlrpc_server.loseConnection)
-        self._xmlrpc_server_uri = 'http://%s:%i/' % (self._addr, self._xmlrpc_server.getHost().port)
+        self._xmlrpc_server_uri = "http://%s:%i/" % (
+            self._addr,
+            self._xmlrpc_server.getHost().port,
+        )
 
         self._tcpros_handlers = {}
 
@@ -163,14 +188,25 @@ class NodeHandle(object):
                 header = tcpros.deserialize_dict((yield conn.receiveString()))
 
                 def default(header, conn):
-                    conn.sendString(tcpros.serialize_dict(dict(error='unhandled connection')))
+                    conn.sendString(
+                        tcpros.serialize_dict(dict(error="unhandled connection"))
+                    )
                     conn.transport.loseConnection()
-                if 'service' in header:
-                    self._tcpros_handlers.get(('service', header['service']), default)(header, conn)
-                elif 'topic' in header:
-                    self._tcpros_handlers.get(('topic', header['topic']), default)(header, conn)
+
+                if "service" in header:
+                    self._tcpros_handlers.get(("service", header["service"]), default)(
+                        header, conn
+                    )
+                elif "topic" in header:
+                    self._tcpros_handlers.get(("topic", header["topic"]), default)(
+                        header, conn
+                    )
                 else:
-                    conn.sendString(tcpros.serialize_dict(dict(error='no topic or service name detected')))
+                    conn.sendString(
+                        tcpros.serialize_dict(
+                            dict(error="no topic or service name detected")
+                        )
+                    )
                     conn.transport.loseConnection()
             except:
                 conn.transport.loseConnection()
@@ -180,9 +216,15 @@ class NodeHandle(object):
             conn = tcpros.Protocol()
             _handle_tcpros_conn(conn)
             return conn
-        self._tcpros_server = reactor.listenTCP(0, util.AutoServerFactory(_make_tcpros_protocol))
+
+        self._tcpros_server = reactor.listenTCP(
+            0, util.AutoServerFactory(_make_tcpros_protocol)
+        )
         self._shutdown_callbacks.add(self._tcpros_server.loseConnection)
-        self._tcpros_server_uri = 'rosrpc://%s:%i' % (self._addr, self._tcpros_server.getHost().port)
+        self._tcpros_server_uri = "rosrpc://%s:%i" % (
+            self._addr,
+            self._tcpros_server.getHost().port,
+        )
         self._tcpros_server_addr = self._addr, self._tcpros_server.getHost().port
 
         while True:
@@ -194,9 +236,14 @@ class NodeHandle(object):
                 traceback.print_exc()
                 yield util.wall_sleep(1)  # pause so we don't retry immediately
             else:
-                other_node_proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(other_node_uri), self._name)
+                other_node_proxy = rosxmlrpc.Proxy(
+                    xmlrpc.Proxy(other_node_uri), self._name
+                )
                 try:
-                    yield util.wrap_timeout(other_node_proxy.shutdown('new node registered with same name'), 3)
+                    yield util.wrap_timeout(
+                        other_node_proxy.shutdown("new node registered with same name"),
+                        3,
+                    )
                 except error.ConnectionRefusedError:
                     pass
                 except Exception:
@@ -204,28 +251,37 @@ class NodeHandle(object):
                 break
 
         try:
-            self._use_sim_time = yield self.get_param('/use_sim_time')
+            self._use_sim_time = yield self.get_param("/use_sim_time")
         except rosxmlrpc.Error:  # assume that error means not found
             self._use_sim_time = False
         if self._use_sim_time:
+
             def got_clock(msg):
                 self._sim_time = msg.clock
-            self._clock_sub = self.subscribe('/clock', Clock, got_clock)
+
+            self._clock_sub = self.subscribe("/clock", Clock, got_clock)
             # make sure self._sim_time gets set before we continue
-            yield util.wrap_time_notice(self._clock_sub.get_next_message(), 1,
-                                        'getting simulated time from /clock')
+            yield util.wrap_time_notice(
+                self._clock_sub.get_next_message(),
+                1,
+                "getting simulated time from /clock",
+            )
 
-        for k, v in self._remappings.iteritems():
-            if k.startswith('_') and not k.startswith('__'):
-                yield self.set_param(self.resolve_name('~' + k[1:]), yaml.load(v))
+        for k, v in self._remappings.items():
+            if k.startswith("_") and not k.startswith("__"):
+                yield self.set_param(self.resolve_name("~" + k[1:]), yaml.load(v))
 
-        self.advertise_service('~get_loggers', GetLoggers, lambda req: GetLoggersResponse())
-        self.advertise_service('~set_logger_level', SetLoggerLevel, lambda req: SetLoggerLevelResponse())
+        self.advertise_service(
+            "~get_loggers", GetLoggers, lambda req: GetLoggersResponse()
+        )
+        self.advertise_service(
+            "~set_logger_level", SetLoggerLevel, lambda req: SetLoggerLevelResponse()
+        )
 
         defer.returnValue(self)
 
     def shutdown(self):
-        if not hasattr(self, '_shutdown_thread'):
+        if not hasattr(self, "_shutdown_thread"):
             self._shutdown_thread = self._real_shutdown()
         return util.branch_deferred(self._shutdown_thread)
 
@@ -260,7 +316,7 @@ class NodeHandle(object):
         if isinstance(time, (float, int)):
             time = genpy.Time.from_sec(time)
         elif not isinstance(time, genpy.Time):
-            raise TypeError('expected float or genpy.Time')
+            raise TypeError("expected float or genpy.Time")
 
         if self._use_sim_time:
             while self._sim_time < time:
@@ -276,25 +332,25 @@ class NodeHandle(object):
         if isinstance(duration, (float, int)):
             duration = genpy.Duration.from_sec(duration)
         elif not isinstance(duration, genpy.Duration):
-            raise TypeError('expected float or genpy.Duration')
+            raise TypeError("expected float or genpy.Duration")
 
         return self.sleep_until(self.get_time() + duration)
 
     def resolve_name_without_remapping(self, name):
-        if name.startswith('/'):
+        if name.startswith("/"):
             return name
-        elif name.startswith('~'):
-            return self._name + '/' + name[1:]
+        elif name.startswith("~"):
+            return self._name + "/" + name[1:]
         else:
-            return self._ns + '/' + name
+            return self._ns + "/" + name
 
     def resolve_name(self, name):
         name = self.resolve_name_without_remapping(name)
-        for before_unresolved, after_unresolved in self._remappings.iteritems():
+        for before_unresolved, after_unresolved in self._remappings.items():
             before = self.resolve_name_without_remapping(before_unresolved)
             after = self.resolve_name_without_remapping(after_unresolved)
-            if name == before or name.startswith(before + '/'):
-                return after + name[len(before):]
+            if name == before or name.startswith(before + "/"):
+                return after + name[len(before) :]
         return name
 
     def is_running(self):
