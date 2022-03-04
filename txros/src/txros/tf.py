@@ -13,7 +13,7 @@ from geometry_msgs.msg import TransformStamped
 from tf2_msgs.msg import TFMessage
 from tf import transformations  # XXX
 
-from txros import util
+from . import util
 
 
 def _sinc(x):
@@ -23,10 +23,14 @@ def _sinc(x):
 def _quat_from_rotvec(r):
     r = numpy.array(r)
     angle = numpy.linalg.norm(r)
-    return numpy.concatenate([
-        _sinc(angle / 2) / 2 * r,  # = sin(angle/2) * normalized(r), without the singularity
-        [math.cos(angle / 2)],
-    ])
+    return numpy.concatenate(
+        [
+            _sinc(angle / 2)
+            / 2
+            * r,  # = sin(angle/2) * normalized(r), without the singularity
+            [math.cos(angle / 2)],
+        ]
+    )
 
 
 def _rotvec_from_quat(q):
@@ -37,20 +41,28 @@ def _rotvec_from_quat(q):
 
 
 class Transform(object):
-
     @classmethod
     def identity(cls):
         return cls([0, 0, 0], [0, 0, 0, 1])
 
     @classmethod
     def from_Transform_message(cls, msg):
-        return cls([msg.translation.x, msg.translation.y, msg.translation.z],
-                   [msg.rotation.x, msg.rotation.y, msg.rotation.z, msg.rotation.w])
+        return cls(
+            [msg.translation.x, msg.translation.y, msg.translation.z],
+            [msg.rotation.x, msg.rotation.y, msg.rotation.z, msg.rotation.w],
+        )
 
     @classmethod
     def from_Pose_message(cls, msg):
-        return cls([msg.position.x, msg.position.y, msg.position.z],
-                   [msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w])
+        return cls(
+            [msg.position.x, msg.position.y, msg.position.z],
+            [
+                msg.orientation.x,
+                msg.orientation.y,
+                msg.orientation.z,
+                msg.orientation.w,
+            ],
+        )
 
     def __init__(self, p, q):
         self._p = numpy.array(p)
@@ -58,13 +70,17 @@ class Transform(object):
         self._q_mat = transformations.quaternion_matrix(self._q)[:3, :3]
 
     def __sub__(self, other):
-        return numpy.concatenate([
-            self._p - other._p,
-            _rotvec_from_quat(transformations.quaternion_multiply(
-                self._q,
-                transformations.quaternion_inverse(other._q),
-            )),
-        ])
+        return numpy.concatenate(
+            [
+                self._p - other._p,
+                _rotvec_from_quat(
+                    transformations.quaternion_multiply(
+                        self._q,
+                        transformations.quaternion_inverse(other._q),
+                    )
+                ),
+            ]
+        )
 
     def __add__(self, other):
         return Transform(
@@ -88,10 +104,13 @@ class Transform(object):
         )
 
     def as_matrix(self):
-        return transformations.translation_matrix(self._p).dot(transformations.quaternion_matrix(self._q))
+        return transformations.translation_matrix(self._p).dot(
+            transformations.quaternion_matrix(self._q)
+        )
 
     def __str__(self):
-        return 'Transform(%r, %r)' % (self._p, self._q)
+        return "Transform(%r, %r)" % (self._p, self._q)
+
     __repr__ = __str__
 
     def transform_point(self, point):
@@ -105,13 +124,12 @@ class Transform(object):
 
 
 def _make_absolute(frame_id):
-    if not frame_id.startswith('/'):
-        return '/' + frame_id
+    if not frame_id.startswith("/"):
+        return "/" + frame_id
     return frame_id
 
 
 class TransformListener(object):
-
     def __init__(self, node_handle, history_length=genpy.Duration(10)):
         self._node_handle = node_handle
         self._history_length = history_length
@@ -119,9 +137,13 @@ class TransformListener(object):
         self._id_counter = itertools.count()
 
         self._tfs = {}  # child_frame_id -> sorted list of (time, frame_id, Transform)
-        self._dfs = {}  # child_frame_id -> dict of deferreds to call when new tf is received
+        self._dfs = (
+            {}
+        )  # child_frame_id -> dict of deferreds to call when new tf is received
 
-        self._tf_subscriber = self._node_handle.subscribe('/tf', TFMessage, self._got_tfs)
+        self._tf_subscriber = self._node_handle.subscribe(
+            "/tf", TFMessage, self._got_tfs
+        )
 
     def shutdown(self):
         self._tf_subscriber.shutdown()
@@ -134,10 +156,16 @@ class TransformListener(object):
             l = self._tfs.setdefault(child_frame_id, [])
 
             if l and transform.header.stamp < l[-1][0]:
-                print child_frame_id, "frame's time decreased!"
+                print(child_frame_id, "frame's time decreased!")
                 del l[:]
 
-            l.append((transform.header.stamp, frame_id, Transform.from_Transform_message(transform.transform)))
+            l.append(
+                (
+                    transform.header.stamp,
+                    frame_id,
+                    Transform.from_Transform_message(transform.transform),
+                )
+            )
 
             if l[0][0] + self._history_length * 2 <= transform.header.stamp:
                 pos = 0
@@ -149,16 +177,17 @@ class TransformListener(object):
             frame_id = _make_absolute(transform.header.frame_id)
 
             dfs = self._dfs.pop(frame_id, {})
-            for df in dfs.itervalues():
+            for df in dfs.values():
                 df.callback(None)
 
     def _wait_for_new(self, child_frame_id):
-        id_ = self._id_counter.next()
+        id_ = next(self._id_counter)
 
         def cancel(df_):
             self._dfs[child_frame_id].pop(id_)
             if not self._dfs[child_frame_id]:
                 self._dfs.pop(child_frame_id)
+
         df = defer.Deferred(cancel)
         self._dfs.setdefault(child_frame_id, {})[id_] = df
         return df
@@ -171,7 +200,9 @@ class TransformListener(object):
 
         to_tfs = {to_frame: Transform.identity()}  # x -> Transform from to_frame to x
         to_pos = to_frame
-        from_tfs = {from_frame: Transform.identity()}  # x -> Transform from from_frame to x
+        from_tfs = {
+            from_frame: Transform.identity()
+        }  # x -> Transform from from_frame to x
         from_pos = from_frame
 
         while True:
@@ -187,13 +218,17 @@ class TransformListener(object):
                     to_tfs[new_to_pos] = t * to_tfs[to_pos]
 
                     if new_to_pos in from_tfs:
-                        defer.returnValue(to_tfs[new_to_pos].inverse() * from_tfs[new_to_pos])
+                        defer.returnValue(
+                            to_tfs[new_to_pos].inverse() * from_tfs[new_to_pos]
+                        )
 
                     to_pos = new_to_pos
 
             while True:
                 try:
-                    new_from_pos, t = self._interpolate(self._tfs.get(from_pos, []), time)
+                    new_from_pos, t = self._interpolate(
+                        self._tfs.get(from_pos, []), time
+                    )
                 except _TooFutureError:
                     break
                 except TooPastError:
@@ -203,7 +238,9 @@ class TransformListener(object):
                     from_tfs[new_from_pos] = t * from_tfs[from_pos]
 
                     if new_from_pos in to_tfs:
-                        defer.returnValue(to_tfs[new_from_pos].inverse() * from_tfs[new_from_pos])
+                        defer.returnValue(
+                            to_tfs[new_from_pos].inverse() * from_tfs[new_from_pos]
+                        )
 
                     from_pos = new_from_pos
 
@@ -212,7 +249,9 @@ class TransformListener(object):
                 self._wait_for_new(from_pos),
             ]
             try:
-                yield defer.DeferredList(lst, fireOnOneCallback=True, fireOnOneErrback=True)
+                yield defer.DeferredList(
+                    lst, fireOnOneCallback=True, fireOnOneErrback=True
+                )
             finally:
                 for df in lst:
                     df.cancel()
@@ -246,26 +285,27 @@ class TransformListener(object):
 
 class _TooFutureError(Exception):
 
-    '''This is an internal exception; it should never escape to the user'''
+    """This is an internal exception; it should never escape to the user"""
 
 
 class TooPastError(Exception):
 
-    '''
+    """
     User asked for a transform that will never known because it's from before
     the start of the history buffer
-    '''
+    """
 
 
 class TransformBroadcaster(object):
-
     def __init__(self, node_handle):
         self._node_handle = node_handle
-        self._tf_publisher = self._node_handle.advertise('/tf', TFMessage)
+        self._tf_publisher = self._node_handle.advertise("/tf", TFMessage)
 
     def send_transform(self, transform):
         if not isinstance(transform, TransformStamped):
-            raise TypeError('expected TransformStamped')
-        self._tf_publisher.publish(TFMessage(
-            transforms=[transform],
-        ))
+            raise TypeError("expected TransformStamped")
+        self._tf_publisher.publish(
+            TFMessage(
+                transforms=[transform],
+            )
+        )

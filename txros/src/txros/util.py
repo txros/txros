@@ -15,7 +15,7 @@ def wall_sleep(duration):
     if isinstance(duration, genpy.Duration):
         duration = duration.to_sec()
     elif not isinstance(duration, (float, int)):
-        raise TypeError('expected float or genpy.Duration')
+        raise TypeError("expected float or genpy.Duration")
     df = defer.Deferred(canceller=lambda df_: dc.cancel())
     dc = reactor.callLater(duration, df.callback, None)
     return df
@@ -24,7 +24,7 @@ def wall_sleep(duration):
 def sleep(duration):
     # printing rather than using DeprecationWarning because DeprecationWarning
     # is disabled by default, and that's useless.
-    print 'txros.util.sleep is deprecated! use txros.util.wall_sleep instead.'
+    print("txros.util.sleep is deprecated! use txros.util.wall_sleep instead.")
 
     return wall_sleep(duration)
 
@@ -35,6 +35,7 @@ def branch_deferred(df, canceller=None):
     def cb(result):
         branched_df.callback(result)
         return result
+
     df.addBoth(cb)
     return branched_df
 
@@ -48,6 +49,7 @@ def deferred_has_been_called(df):
             res2[:] = [res]
         else:
             return res
+
     df.addBoth(cb)
     still_running = False
     if res2:
@@ -56,7 +58,6 @@ def deferred_has_been_called(df):
 
 
 class DeferredCancelDeferred(defer.Deferred):
-
     def cancel(self):
         if not self.called:
             self.errback(failure.Failure(defer.CancelledError()))
@@ -68,15 +69,14 @@ class DeferredCancelDeferred(defer.Deferred):
 
 
 class UncancellableDeferred(defer.Deferred):
-
     def cancel(self):
-        raise TypeError('not cancellable')
+        raise TypeError("not cancellable")
 
 
 class InlineCallbacksCancelled(BaseException):
-
     def __str__(self):
-        return 'InlineCallbacksCancelled()'
+        return "InlineCallbacksCancelled()"
+
     __repr__ = __str__
 
 
@@ -95,10 +95,18 @@ def _step(cur, gen, currently_waiting_on, mine, df, has_been_cancelled):
             if not has_been_cancelled:
                 df.callback(None)
             else:
-                df.errback(TypeError('InlineCallbacksCancelled exception was converted to non-exception'))
+                df.errback(
+                    TypeError(
+                        "InlineCallbacksCancelled exception was converted to non-exception"
+                    )
+                )
         except InlineCallbacksCancelled:
             if not has_been_cancelled:
-                df.errback(TypeError('InlineCallbacksCancelled exception resulted unexpectedly'))
+                df.errback(
+                    TypeError(
+                        "InlineCallbacksCancelled exception resulted unexpectedly"
+                    )
+                )
             else:
                 df.callback(None)
         except defer._DefGen_Return as e:
@@ -135,16 +143,23 @@ def _step(cur, gen, currently_waiting_on, mine, df, has_been_cancelled):
                 raise TypeError(
                     "returnValue() in %r would cause %r to exit: "
                     "returnValue should only be invoked by functions decorated "
-                    "with inlineCallbacks" % (
+                    "with inlineCallbacks"
+                    % (
                         ultimateTrace.tb_frame.f_code.co_name,
-                        appCodeTrace.tb_frame.f_code.co_name))
+                        appCodeTrace.tb_frame.f_code.co_name,
+                    )
+                )
 
             # end copying
 
             if not has_been_cancelled:
                 df.callback(e.value)
             else:
-                df.errback(TypeError('InlineCallbacksCancelled exception was converted to non-exception'))
+                df.errback(
+                    TypeError(
+                        "InlineCallbacksCancelled exception was converted to non-exception"
+                    )
+                )
         except BaseException as e:
             df.errback()
         else:
@@ -161,7 +176,8 @@ def _step(cur, gen, currently_waiting_on, mine, df, has_been_cancelled):
                         currently_waiting_on,
                         currently_waiting_on[0],
                         df,
-                        has_been_cancelled)  # external code is run between this and gotResult
+                        has_been_cancelled,
+                    )  # external code is run between this and gotResult
             else:
                 cur = res
                 continue
@@ -179,11 +195,13 @@ def cancellableInlineCallbacks(f):
         except defer._DefGen_Return:
             raise TypeError(
                 "inlineCallbacks requires %r to produce a generator; instead "
-                "caught returnValue being used in a non-generator" % (f,))
+                "caught returnValue being used in a non-generator" % (f,)
+            )
         if not isinstance(gen, types.GeneratorType):
             raise TypeError(
                 "inlineCallbacks requires %r to produce a generator; "
-                "instead got %r" % (f, gen))
+                "instead got %r" % (f, gen)
+            )
         # end copy
 
         def cancelled(df_):
@@ -194,10 +212,11 @@ def cancellableInlineCallbacks(f):
             cancel_result = x.cancel()  # make optional?
 
             if isinstance(cancel_result, defer.Deferred):
+
                 @cancel_result.addBoth
                 def _(res):
                     if isinstance(res, failure.Failure):
-                        print res
+                        print(res)
                     df2 = UncancellableDeferred()
                     _step(
                         failure.Failure(InlineCallbacksCancelled()),
@@ -205,8 +224,10 @@ def cancellableInlineCallbacks(f):
                         currently_waiting_on,
                         currently_waiting_on[0],
                         df2,
-                        True)
+                        True,
+                    )
                     return df2
+
             else:
                 df2 = UncancellableDeferred()
                 _step(
@@ -215,17 +236,19 @@ def cancellableInlineCallbacks(f):
                     currently_waiting_on,
                     currently_waiting_on[0],
                     df2,
-                    True)
+                    True,
+                )
                 return df2
+
         df = DeferredCancelDeferred(cancelled)
         currently_waiting_on = [None]
         _step(None, gen, currently_waiting_on, currently_waiting_on[0], df, False)
         return df
+
     return runner
 
 
 class AutoServerFactory(protocol.ServerFactory):
-
     def __init__(self, func):
         self._func = func
 
@@ -239,7 +262,7 @@ class AutoServerFactory(protocol.ServerFactory):
 @cancellableInlineCallbacks
 def nonblocking_raw_input(prompt):
     class P(basic.LineOnlyReceiver):
-        delimiter = '\n'
+        delimiter = "\n"
 
         def __init__(self, prompt):
             self._prompt = prompt
@@ -251,6 +274,7 @@ def nonblocking_raw_input(prompt):
         def lineReceived(self, line):
             self.df.callback(line)
             self.transport.loseConnection()
+
     p = P(prompt)
     f = stdio.StandardIO(p)
     try:
@@ -269,7 +293,9 @@ def wrap_timeout(df, duration, cancel_df_on_timeout=True):
     timeout = wall_sleep(duration)
 
     try:
-        result, index = yield defer.DeferredList([df, timeout], fireOnOneCallback=True, fireOnOneErrback=True)
+        result, index = yield defer.DeferredList(
+            [df, timeout], fireOnOneCallback=True, fireOnOneErrback=True
+        )
     finally:
         if cancel_df_on_timeout:
             yield df.cancel()
@@ -285,14 +311,14 @@ def wrap_timeout(df, duration, cancel_df_on_timeout=True):
 
 @cancellableInlineCallbacks
 def wrap_time_notice(df, duration, description):
-    '''print description if df is taking more than duration to complete'''
+    """print description if df is taking more than duration to complete"""
 
     try:
         defer.returnValue((yield wrap_timeout(df, duration, False)))
     except TimeoutError:
-        print '%s is taking a while...' % (description[0].upper() + description[1:],)
+        print("%s is taking a while..." % (description[0].upper() + description[1:],))
         res = yield df
-        print '...%s succeeded.' % (description,)
+        print("...%s succeeded." % (description,))
         defer.returnValue(res)
 
 
@@ -304,5 +330,6 @@ def launch_main(main_func):
         except Exception:
             traceback.print_exc()
         reactor.stop()
+
     reactor.callWhenRunning(_)
     reactor.run()
