@@ -6,7 +6,6 @@ from twisted.python import failure, log
 
 
 class Event(object):
-
     def __init__(self):
         self.observers = {}
         self.id_generator = itertools.count()
@@ -42,7 +41,7 @@ class Event(object):
 
         once, self._once = self._once, None
 
-        for id, func in sorted(self.observers.iteritems()):
+        for id, func in sorted(self.observers.items()):
             try:
                 func(*event)
             except:
@@ -56,17 +55,18 @@ class Event(object):
         df = defer.Deferred()
         id1 = once.watch(lambda *event: df.callback(event))
         if timeout is not None:
+
             def do_timeout():
-                df.errback(failure.Failure(defer.TimeoutError('in Event.get_deferred')))
+                df.errback(failure.Failure(defer.TimeoutError("in Event.get_deferred")))
                 once.unwatch(id1)
                 once.unwatch(x)
+
             delay = reactor.callLater(timeout, do_timeout)
             x = once.watch(lambda *event: delay.cancel())
         return df
 
 
 class Variable(object):
-
     def __init__(self, value):
         self.value = value
         self.changed = Event()
@@ -87,6 +87,7 @@ class Variable(object):
         def _(value):
             if func(value):
                 res.happened(value)
+
         self.changed.watch(_)
         return res
 
