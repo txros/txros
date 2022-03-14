@@ -1,6 +1,6 @@
 from __future__ import division
 
-import StringIO
+from io import StringIO
 
 from twisted.internet import defer, reactor, endpoints
 

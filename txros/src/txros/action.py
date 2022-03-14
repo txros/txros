@@ -101,9 +101,9 @@ class Goal:
     Server.
 
     Parameters:
-        goal: GoalStatus - The original goal message which constructs this class
-        status: uint8 - An enum representing the status of
-        status_text: str - A string representing the status of the goal
+        goal (GoalStatus): The original goal message which constructs this class
+        status (uint8): An enum representing the status of
+        status_text (:class:`str`): A string representing the status of the goal
     """
 
     def __init__(self,
