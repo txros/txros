@@ -126,7 +126,7 @@ class Goal:
         Constructs a GoalStatus method from the Goal class.
 
         Returns:
-            GoalStatus - The constructed message.
+            :class:`GoalStatus`: The constructed message.
         """
         msg = GoalStatus()
 
