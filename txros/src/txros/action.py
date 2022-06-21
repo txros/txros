@@ -139,7 +139,7 @@ class Goal:
 
         .. describe:: x = y
 
-            Determines equality between two goals by comparing their IDs.
+            determines equality between two goals by comparing their ids.
 
     Parameters:
         goal (GoalStatus): The original goal message which constructs this class
