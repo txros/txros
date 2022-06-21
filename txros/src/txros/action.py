@@ -11,6 +11,20 @@ import genpy
 
 from . import util
 
+from typing import TYPE_CHECKING, Type, Any, Protocol
+
+if TYPE_CHECKING:
+    from .nodehandle import NodeHandle
+
+
+class ActionMessage(Protocol):
+    action_goal: genpy.Message
+    action_result: genpy.Message
+    action_feedback: genpy.Message
+
+    def __call__(self) -> ActionMessage:
+        ...
+
 
 class GoalManager:
     def __init__(self, action_client: ActionClient, goal: Goal):
@@ -67,15 +81,27 @@ class GoalManager:
         for df in old:
             df.callback(feedback)
 
-    def get_result(self):
+    def get_result(self) -> Any:
+        """
+        Gets the result of the goal from the manager.
+
+        Returns:
+            Any: ???
+        """
         return util.branch_deferred(self._result_df, lambda df_: self.cancel())
 
-    def get_feedback(self):
+    def get_feedback(self) -> None:
+        """
+        Gets the feedback from all feedback Deferred objects.
+        """
         df = defer.Deferred()
         self._feedback_dfs.append(df)
         return df
 
-    def cancel(self):
+    def cancel(self) -> None:
+        """
+        Publishes a message to the action client requesting the goal to be cancelled.
+        """
         self._action_client._cancel_pub.publish(
             GoalID(
                 stamp=genpy.Time(0, 0),
@@ -106,10 +132,11 @@ class Goal:
         status_text (:class:`str`): A string representing the status of the goal
     """
 
-    def __init__(self,
-                 goal_msg: GoalStatus,
-                 status: int = GoalStatus.PENDING,
-                 status_text: str = ""
+    def __init__(
+        self,
+        goal_msg: GoalStatus,
+        status: int = GoalStatus.PENDING,
+        status_text: str = "",
     ):
         if goal_msg.goal_id.id == "":
             self.goal = None
@@ -117,7 +144,7 @@ class Goal:
         self.status = status
         self.status_text = status_text
 
-    def __eq__(self, rhs):
+    def __eq__(self, rhs: Goal):
         assert isinstance(self.goal, GoalStatus)
         return self.goal.goal_id.id == rhs.goal.goal_id.id
 
@@ -126,7 +153,7 @@ class Goal:
         Constructs a GoalStatus method from the Goal class.
 
         Returns:
-            :class:`GoalStatus`: The constructed message.
+            GoalStatus: The constructed message.
         """
         msg = GoalStatus()
 
@@ -146,31 +173,39 @@ class SimpleActionServer:
     have a current goal and a next goal. If new goals arrive with one already queued
     to be next, the goal with the greater timestamp will bump to other.
 
-    Usage:
-    Contruct a SimpleActionServer with a node handle, topic namespace, and type
-        serv = SimpleActionServer(nh, '/test_action', turtle_actionlib.msg.ShapeAction)
-    The server must be started before any goals can be accepted
-        serv.start()
-    To accept a goal
-        while not self.is_new_goal_available():  # Loop until there is a new goal
-            yield nh.sleep(0.1)
-        goal = serv.accept_new_goal()
-    To publish feedback
-        serv.publish_feedback(ShapeFeedback())
-    To accept a preempt (a new goal attempted to replace the current one)
-        if self.is_preempt_requested():
-            goal = serv.accept_new_goal()  # Automaticly cancels old goal
-    To finish a goal
-        serv.set_succeeded(text='Wahoo!', result=ShapeResult(apothem=1))
-        # or
-        serv.set_aborted(text='Something went wrong!')
+    .. code-block:: python
 
-    TODO:
-    - implement optional callbacks for new goals
-    - ensure headers are correct for each message
+        >>> # Contruct a SimpleActionServer with a node handle, topic namespace, and type
+        >>> serv = SimpleActionServer(nh, '/test_action', turtle_actionlib.msg.ShapeAction)
+        >>> # The server must be started before any goals can be accepted
+        >>> serv.start()
+        >>> # To accept a goal
+        >>> while not self.is_new_goal_available():  # Loop until there is a new goal
+        ...     yield nh.sleep(0.1)
+        >>> goal = serv.accept_new_goal()
+        >>> # To publish feedback
+        >>> serv.publish_feedback(ShapeFeedback())
+        >>> # To accept a preempt (a new goal attempted to replace the current one)
+        >>> if self.is_preempt_requested():
+        ...     goal = serv.accept_new_goal()  # Automaticly cancels old goal
+        >>> # To finish a goal
+        >>> serv.set_succeeded(text='Wahoo!', result=ShapeResult(apothem=1))
+        >>> # or
+        >>> serv.set_aborted(text='Something went wrong!')
     """
 
-    def __init__(self, node_handle, name, action_type, goal_cb=None, preempt_cb=None):
+    # TODO:
+    # - implement optional callbacks for new goals
+    # - ensure headers are correct for each message
+
+    def __init__(
+        self,
+        node_handle: NodeHandle,
+        name: str,
+        action_type,
+        goal_cb=None,
+        preempt_cb=None,
+    ):
         self.started = False
         self._node_handle = node_handle
         self._name = name
@@ -250,19 +285,46 @@ class SimpleActionServer:
         self._publish_status()
         return self.goal.goal.goal
 
-    def is_new_goal_available(self):
+    def is_new_goal_available(self) -> bool:
+        """
+        Whether the next goal of the server is defined.
+
+        Returns:
+            bool: Whether the next goal is not ``None``.
+        """
         return self.next_goal is not None
 
-    def is_preempt_requested(self):
+    def is_preempt_requested(self) -> bool:
+        """
+        Whether the goal has been requested to be cancelled, and there is both
+        a goal currently running and a goal scheduled to be run shortly.
+
+        Returns:
+            bool
+        """
         return (self.next_goal and self.goal) or self.is_cancel_requested()
 
-    def is_cancel_requested(self):
+    def is_cancel_requested(self) -> bool:
+        """
+        Whether a goal is currently active and a cancel has been requested.
+
+        Returns:
+            bool
+        """
         return self.goal is not None and self.cancel_requested
 
-    def is_active(self):
+    def is_active(self) -> bool:
+        """
+        Returns whether there is an active goal running.
+
+        Returns:
+            bool
+        """
         return self.goal is not None
 
-    def _set_result(self, status=GoalStatus.SUCCEEDED, text="", result=None):
+    def _set_result(
+        self, status: GoalStatus = GoalStatus.SUCCEEDED, text: str = "", result=None
+    ) -> None:
         if not self.started:
             print("SimpleActionServer: attempted to set_succeeded before starting")
             return
@@ -279,7 +341,7 @@ class SimpleActionServer:
         self._result_pub.publish(result_msg)
         self.goal = None
 
-    def set_succeeded(self, result=None, text=""):
+    def set_succeeded(self, result=None, text: str = "") -> None:
         self._set_result(status=GoalStatus.SUCCEEDED, text=text, result=result)
 
     def set_aborted(self, result=None, text=""):
@@ -391,7 +453,7 @@ class SimpleActionServer:
 
 
 class ActionClient:
-    def __init__(self, node_handle, name, action_type):
+    def __init__(self, node_handle: NodeHandle, name: str, action_type: ActionMessage):
         self._node_handle = node_handle
         self._name = name
         self._type = action_type
@@ -431,7 +493,13 @@ class ActionClient:
             manager = self._goal_managers[msg.status.goal_id.id]
             manager._feedback_callback(msg.status.status, msg.feedback)
 
-    def send_goal(self, goal):
+    def send_goal(self, goal: Goal) -> GoalManager:
+        """
+        Sends a goal to a goal manager.
+
+        Returns:
+            GoalManager: The manager of the goal.
+        """
         return GoalManager(self, goal)
 
     def cancel_all_goals(self):
