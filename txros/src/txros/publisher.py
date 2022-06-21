@@ -1,15 +1,23 @@
-from __future__ import division
-
+from __future__ import annotations
 import traceback
 from io import StringIO
+from typing import TYPE_CHECKING, Type
 
+import genpy
 from twisted.internet import defer, error
 
-from txros import util, tcpros
+from txros import tcpros, util
 
+if TYPE_CHECKING:
+    from .nodehandle import NodeHandle
 
 class Publisher:
-    def __init__(self, node_handle, name, message_type, latching=False):
+    """
+    A Publisher in the txROS suite. Managed through a node handle.
+    """
+    def __init__(
+        self, node_handle: NodeHandle, name: str, message_type: Type[genpy.Message], latching: bool = False
+    ):
         self._node_handle = node_handle
         self._name = self._node_handle.resolve_name(name)
         self._type = message_type
@@ -62,6 +70,9 @@ class Publisher:
             self._shutdown_finished.callback(None)
 
     def shutdown(self):
+        """
+        Shuts the publisher down. All operations scheduled by the publisher are cancelled.
+        """
         self._node_handle._shutdown_callbacks.discard(self.shutdown)
         self._think_thread.cancel()
         self._think_thread.addErrback(lambda fail: fail.trap(defer.CancelledError))
@@ -109,8 +120,15 @@ class Publisher:
         finally:
             conn.transport.loseConnection()
 
-    def publish(self, msg):
-        x = StringIO.StringIO()
+    def publish(self, msg: genpy.Message) -> None:
+        """
+        Publishes a message onto the topic. The message is serialized and sent to
+        all connections connected to the publisher.
+
+        Args:
+            msg (genpy.Message): The ROS message to send to all connected clients.
+        """
+        x = StringIO()
         self._type.serialize(msg, x)
         data = x.getvalue()
 
@@ -121,4 +139,7 @@ class Publisher:
             self._last_message_data = data
 
     def get_connections(self):
+        """
+        Gets connections to the publisher.
+        """
         return list(self._connections.values())
