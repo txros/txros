@@ -1,14 +1,43 @@
-from __future__ import division
+from __future__ import annotations
 
 from io import StringIO
+from typing import TYPE_CHECKING, Protocol, Type
 
-from twisted.internet import defer, reactor, endpoints
+import genpy
+from twisted.internet import defer, endpoints, reactor
 
-from . import util, tcpros, rosxmlrpc
+from . import rosxmlrpc, tcpros, util
+
+if TYPE_CHECKING:
+    from .nodehandle import NodeHandle
+
+
+class ServiceType(Protocol):
+    _type: str
+    _md5sum: str
+    _request_class: Type[genpy.Message]
+    _response_class: Type[genpy.Message]
 
 
 class ServiceError(Exception):
-    def __init__(self, message):
+    """
+    Represents an error with a service client in txROS.
+
+    Inherits from :class:`Exception`.
+
+    .. container:: operations
+
+        .. describe:: str(x)
+
+            Pretty-prints ``ServiceError`` name with the given error message.
+
+        .. describe:: repr(x)
+
+            Pretty-prints ``ServiceError`` name with the given error message.
+            Equivalent to ``str(x)``.
+    """
+
+    def __init__(self, message: str):
         self._message = message
 
     def __str__(self):
@@ -17,14 +46,32 @@ class ServiceError(Exception):
     __repr__ = __str__
 
 
-class ServiceClient(object):
-    def __init__(self, node_handle, name, service_type):
+class ServiceClient:
+    """
+    A client connected to a service in txROS.
+
+    .. container:: operations
+
+        .. describe:: x(request_class)
+
+            Makes a request to the service using an instance of the ``request_class``
+            request type. This operation returns a Deferred containing the result
+            sent by the topic through the master server. Any errors will raise an
+            instance of :class:`txros.ServiceError`.
+    """
+
+    def __init__(self, node_handle: NodeHandle, name: str, service_type: ServiceType):
+        """
+        Args:
+            node_handle (NodeHandle): The node handle serving as the client to the service.
+            name (str): The name of the service to connect to.
+        """
         self._node_handle = node_handle
         self._name = self._node_handle.resolve_name(name)
         self._type = service_type
 
     @util.cancellableInlineCallbacks
-    def __call__(self, req):
+    def __call__(self, req: genpy.Message):
         serviceUrl = yield self._node_handle._master_proxy.lookupService(self._name)
 
         protocol, rest = serviceUrl.split("://", 1)
@@ -51,7 +98,7 @@ class ServiceClient(object):
             tcpros.deserialize_dict((yield conn.receiveString()))
 
             # request could be sent before header is received to reduce latency...
-            x = StringIO.StringIO()
+            x = StringIO()
             self._type._request_class.serialize(req, x)
             data = x.getvalue()
             conn.sendString(data)
@@ -67,6 +114,10 @@ class ServiceClient(object):
 
     @util.cancellableInlineCallbacks
     def wait_for_service(self):
+        """
+        Waits for the service to appear. Checks to see if the service has appeared
+        10 times per second.
+        """
         while True:
             try:
                 yield self._node_handle._master_proxy.lookupService(self._name)
