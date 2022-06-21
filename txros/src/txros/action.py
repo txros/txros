@@ -2,16 +2,14 @@ from __future__ import annotations
 
 import random
 import traceback
+from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol
 
+import genpy
+from actionlib_msgs.msg import GoalID, GoalStatus, GoalStatusArray
+from std_msgs.msg import Header
 from twisted.internet import defer
 
-from std_msgs.msg import Header
-from actionlib_msgs.msg import GoalID, GoalStatus, GoalStatusArray
-import genpy
-
 from . import util
-
-from typing import TYPE_CHECKING, Type, Any, Protocol
 
 if TYPE_CHECKING:
     from .nodehandle import NodeHandle
@@ -27,7 +25,17 @@ class ActionMessage(Protocol):
 
 
 class GoalManager:
+    """
+    Manages the interactions between a specific goal and an action client.
+    """
+
     def __init__(self, action_client: ActionClient, goal: Goal):
+        """
+        Args:
+            action_client (ActionClient): The txROS action client to use to manage
+                the goal.
+            goal (Goal): The txROS goal to manage.
+        """
         self._action_client = action_client
         self._goal = goal
 
@@ -113,9 +121,10 @@ class GoalManager:
 
         # self.forget()
 
-    def forget(self):
+    def forget(self) -> None:
         """
-        Leave action running, stop listening
+        Leaves the manager running, but requests for the action client to stop
+        work on the specific goal.
         """
         if self._goal_id in self._action_client._goal_managers:
             del self._action_client._goal_managers[self._goal_id]
@@ -125,6 +134,12 @@ class Goal:
     """
     Implementation of a goal object in the txros adaptation of the Simple Action
     Server.
+
+    .. container:: operations
+
+        .. describe:: x = y
+
+            Determines equality between two goals by comparing their IDs.
 
     Parameters:
         goal (GoalStatus): The original goal message which constructs this class
@@ -150,7 +165,7 @@ class Goal:
 
     def status_msg(self) -> GoalStatus:
         """
-        Constructs a GoalStatus method from the Goal class.
+        Constructs a GoalStatus message from the Goal class.
 
         Returns:
             GoalStatus: The constructed message.
@@ -202,9 +217,9 @@ class SimpleActionServer:
         self,
         node_handle: NodeHandle,
         name: str,
-        action_type,
-        goal_cb=None,
-        preempt_cb=None,
+        action_type: ActionMessage,
+        goal_cb: Callable = None,
+        preempt_cb: Callable = None,
     ):
         self.started = False
         self._node_handle = node_handle
@@ -243,7 +258,7 @@ class SimpleActionServer:
             self._name + "/cancel", GoalID, self._cancel_cb
         )
 
-    def register_goal_callback(self, func):
+    def register_goal_callback(self, func: Callable) -> None:
         self.goal_cb = func
 
     def _process_goal_callback(self):
@@ -254,19 +269,26 @@ class SimpleActionServer:
         if self.preempt_cb:
             self.preempt_cb()
 
-    def register_preempt_callback(self, func):
+    def register_preempt_callback(self, func: Callable) -> None:
         self.preempt_cb = func
 
-    def start(self):
+    def start(self) -> None:
+        """
+        Starts the status loop for the server.
+        """
         self.started = True
         self._status_loop_defered = self._status_loop()
 
-    def stop(self):
+    def stop(self) -> None:
+        """
+        Stops the status loop for the server, and clears all running goals and all
+        goals scheduled to be run.
+        """
         self.goal = None
         self.next_goal = None
         self.started = False
 
-    def accept_new_goal(self):
+    def accept_new_goal(self) -> None:
         if not self.started:
             print(
                 "SIMPLE ACTION SERVER: attempted to accept_new_goal without being started"
@@ -323,7 +345,10 @@ class SimpleActionServer:
         return self.goal is not None
 
     def _set_result(
-        self, status: GoalStatus = GoalStatus.SUCCEEDED, text: str = "", result=None
+        self,
+        status: int = GoalStatus.SUCCEEDED,
+        text: str = "",
+        result: Optional[genpy.Message] = None,
     ) -> None:
         if not self.started:
             print("SimpleActionServer: attempted to set_succeeded before starting")
@@ -341,16 +366,50 @@ class SimpleActionServer:
         self._result_pub.publish(result_msg)
         self.goal = None
 
-    def set_succeeded(self, result=None, text: str = "") -> None:
+    def set_succeeded(
+        self, result: Optional[genpy.Message] = None, text: str = ""
+    ) -> None:
+        """
+        Sets the status of the current goal to be succeeded.
+
+        Args:
+            result (Optional[genpy.Message]): The message to attach in the result.
+            text (str): The text to set in the result. Defaults to an empty string.
+        """
         self._set_result(status=GoalStatus.SUCCEEDED, text=text, result=result)
 
-    def set_aborted(self, result=None, text=""):
+    def set_aborted(
+        self, result: Optional[genpy.Message] = None, text: str = ""
+    ) -> None:
+        """
+        Sets the status of the current goal to aborted.
+
+        Args:
+            result (Optional[genpy.Message]): The message to attach in the result.
+            text (str): The text to set in the result. Defaults to an empty string.
+        """
         self._set_result(status=GoalStatus.ABORTED, text=text, result=result)
 
-    def set_preempted(self, result=None, text=""):
+    def set_preempted(
+        self, result: Optional[genpy.Message] = None, text: str = ""
+    ) -> None:
+        """
+        Sets the status of the current goal to preempted.
+
+        Args:
+            result (Optional[genpy.Message]): The message to attach in the result.
+            text (str): The text to set in the result. Defaults to an empty string.
+        """
         self._set_result(status=GoalStatus.PREEMPTED, text=text, result=result)
 
-    def publish_feedback(self, feedback=None):
+    def publish_feedback(self, feedback: Optional[genpy.Message] = None) -> None:
+        """
+        Publishes a feedback message onto the feedback topic.
+
+        Args:
+            feedback (Optional[genpy.Message]): The optional feedback message to add
+                to the sent message.
+        """
         if not self.started:
             print("SimpleActionServer: attempted to publish_feedback before starting")
             return
@@ -502,7 +561,11 @@ class ActionClient:
         """
         return GoalManager(self, goal)
 
-    def cancel_all_goals(self):
+    def cancel_all_goals(self) -> None:
+        """
+        Sends a message to the mission cancellation topic requesting all goals to
+        be cancelled.
+        """
         self._cancel_pub.publish(
             GoalID(
                 stamp=genpy.Time(0, 0),
@@ -510,7 +573,13 @@ class ActionClient:
             )
         )
 
-    def cancel_goals_at_and_before_time(self, time):
+    def cancel_goals_at_and_before_time(self, time: genpy.rostime.Time) -> None:
+        """
+        Cancel all goals scheduled at and before a specific time.
+
+        Args:
+            time: The time to reference when selecting which goals to cancel.
+        """
         self._cancel_pub.publish(
             GoalID(
                 stamp=time,
@@ -520,6 +589,10 @@ class ActionClient:
 
     @util.cancellableInlineCallbacks
     def wait_for_server(self):
+        """
+        Waits for a server connection. When at least one connection is received,
+        the function terminates.
+        """
         while not (
             set(self._goal_pub.get_connections())
             & set(self._cancel_pub.get_connections())
