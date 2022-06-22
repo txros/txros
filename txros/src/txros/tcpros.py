@@ -1,11 +1,12 @@
-from __future__ import division
+from __future__ import annotations
 
 import struct
+from typing import List, Dict, Iterable
 
 from twisted.internet import defer, protocol
 
 
-def deserialize_list(s):
+def deserialize_list(s: bytes) -> List[bytes]:
     pos = 0
     res = []
     while pos != len(s):
@@ -17,19 +18,19 @@ def deserialize_list(s):
     return res
 
 
-def serialize_list(lst):
-    return "".join(struct.pack("<I", len(x)) + x for x in lst)
+def serialize_list(lst: Iterable[str]) -> str:
+    return "".join(struct.pack("<I", len(x)).decode() + x for x in lst)
 
 
-def deserialize_dict(s):
+def deserialize_dict(s: bytes) -> Dict[bytes, bytes]:
     res = {}
     for item in deserialize_list(s):
-        key, value = item.split("=", 1)
+        key, value = item.split(b"=", 1)
         res[key] = value
     return res
 
 
-def serialize_dict(s):
+def serialize_dict(s: Dict[str, str]) -> str:
     return serialize_list("%s=%s" % (k, v) for k, v in s.items())
 
 
@@ -84,9 +85,9 @@ class Protocol(protocol.Protocol):
     def receiveString(self):
         return self._receive("string")
 
-    def sendByte(self, byte):
+    def sendByte(self, byte: bytes):
         assert len(byte) == 1
         self.transport.write(byte)
 
-    def sendString(self, string):
-        self.transport.write(struct.pack("<I", len(string)) + string)
+    def sendString(self, string: str):
+        self.transport.write(struct.pack("<I", len(string)) + string.encode())

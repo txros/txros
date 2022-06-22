@@ -1,4 +1,4 @@
-from __future__ import division
+from __future__ import annotations
 
 import traceback
 
@@ -6,10 +6,34 @@ from twisted.web import xmlrpc
 from twisted.internet import defer, reactor, endpoints, error
 
 from . import rosxmlrpc, tcpros, util
+from typing import TYPE_CHECKING, Type, Callable, Optional, List
+import genpy
+
+if TYPE_CHECKING:
+    from .nodehandle import NodeHandle
 
 
-class Subscriber(object):
-    def __init__(self, node_handle, name, message_type, callback=lambda message: None):
+class Subscriber:
+    """
+    A subscriber in the txROS suite.
+    """
+    def __init__(
+        self,
+        node_handle: NodeHandle,
+        name: str,
+        message_type: Type[genpy.Message],
+        callback: Callable[[genpy.Message], None] = lambda message: None,
+    ):
+        """
+        Args:
+            node_handle (NodeHandle): The node handle used to communicate with the
+                ROS master server.
+            name (str): The name of the topic to subscribe to.
+            message_type (Type[genpy.Message]): The message class shared by the topic.
+            callback (Callable[[genpy.Message], None]): The callback to use with
+                the subscriber. The callback should receive an instance of the message
+                shared by the topic and return None.
+        """
         self._node_handle = node_handle
         self._name = self._node_handle.resolve_name(name)
         self._type = message_type
@@ -63,24 +87,55 @@ class Subscriber(object):
             self._shutdown_finished.callback(None)
 
     def shutdown(self):
+        """
+        Shuts the subscriber down. All operations scheduled by the subscriber
+        are immediately cancelled.
+        """
         self._node_handle._shutdown_callbacks.discard(self.shutdown)
         self._think_thread.cancel()
         self._think_thread.addErrback(lambda fail: fail.trap(defer.CancelledError))
         self._handle_publisher_list([])
         return util.branch_deferred(self._shutdown_finished)
 
-    def get_last_message(self):
+    def get_last_message(self) -> Optional[genpy.Message]:
+        """
+        Gets the last received message. This may be ``None`` if no message has been
+        received.
+
+        Returns:
+            Optional[genpy.Message]: The last sent message, or ``None``.
+        """
         return self._last_message
 
-    def get_last_message_time(self):
+    def get_last_message_time(self) -> Optional[genpy.Time]:
+        """
+        Gets the time associated with the last received message. May be ``None`` if
+        no message has been received yet.
+
+        Returns:
+            Optional[genpy.Time]: The time of the last received message, or ``None``.
+        """
         return self._last_message_time
 
-    def get_next_message(self):
+    def get_next_message(self) -> defer.Deferred:
+        """
+        Returns a deferred which will contain the next message.
+
+        Returns:
+            Deferred: Deferred object containing the next message.
+        """
         res = defer.Deferred()
         self._message_dfs.append(res)
         return res
 
-    def get_connections(self):
+    def get_connections(self) -> List[Optional[str]]:
+        """
+        Returns the ``callerid`` of each connected client. If a connection does
+        not provide an ID, then the value may be None.
+
+        Returns:
+            List[Optional[str]]: A list of the relevant callerids.
+        """
         return list(self._connections.values())
 
     @util.cancellableInlineCallbacks
