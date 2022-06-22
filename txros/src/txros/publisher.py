@@ -11,12 +11,27 @@ from txros import tcpros, util
 if TYPE_CHECKING:
     from .nodehandle import NodeHandle
 
+
 class Publisher:
     """
     A Publisher in the txROS suite. Managed through a node handle.
+
+    Args:
+        node_handle (NodeHandle): The node handle to associate with this publisher.
+            Used to communicate with the ROS master server.
+        name (str): The name of the publisher topic.
+        message_type (Type[genpy.Message]): The message type that will be published
+            on the topic.
+        latching (bool): Enables latching on the publisher. This ensures that all
+            new connections are immediately sent the most recently sent message
+            when they connect to the publisher.
     """
     def __init__(
-        self, node_handle: NodeHandle, name: str, message_type: Type[genpy.Message], latching: bool = False
+        self,
+        node_handle: NodeHandle,
+        name: str,
+        message_type: Type[genpy.Message],
+        latching: bool = False,
     ):
         self._node_handle = node_handle
         self._name = self._node_handle.resolve_name(name)
