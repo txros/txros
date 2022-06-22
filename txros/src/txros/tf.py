@@ -1,6 +1,4 @@
-from __future__ import absolute_import
-from __future__ import division
-
+from __future__ import annotations
 import math
 import numpy
 import bisect
@@ -9,11 +7,16 @@ import itertools
 from twisted.internet import defer
 
 import genpy
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import TransformStamped, Pose
+from geometry_msgs.msg import Transform as TransformMsg
 from tf2_msgs.msg import TFMessage
 from tf import transformations  # XXX
+from typing import List, TYPE_CHECKING
 
 from . import util
+
+if TYPE_CHECKING:
+    from .nodehandle import NodeHandle
 
 
 def _sinc(x):
@@ -40,20 +43,57 @@ def _rotvec_from_quat(q):
     return 2 / _sinc(math.acos(min(1, q[3]))) * q[:3]
 
 
-class Transform(object):
+class Transform:
+    """
+    Represents a tf transform in the txROS suite.
+
+    .. container:: operations
+
+        .. describe:: x + y
+
+            Adds the components of each transform together.
+
+        .. describe:: x - y
+
+            Subtracts the components between each transform.
+
+        .. describe:: x * y
+
+            Multiplies the components of each transform together.
+
+        .. describe:: str(x)
+
+            Prints the constructor of the class in a string-formatted fashion.
+
+        .. describe:: repr(x)
+
+            Prints the constructor of the class in a string-formatted fashion.
+            Equivalent to ``str(x)``.
+    """
+
     @classmethod
     def identity(cls):
+        """
+        Creates and identity transform. The x, y, and z coordinates are all set to zero.
+        The quaternion is set to ``[0, 0, 0, 1]``.
+        """
         return cls([0, 0, 0], [0, 0, 0, 1])
 
     @classmethod
-    def from_Transform_message(cls, msg):
+    def from_Transform_message(cls, msg: TransformMsg):
+        """
+        Constructs a transform from a :class:`geometry_msgs.msg.Transform` message.
+        """
         return cls(
             [msg.translation.x, msg.translation.y, msg.translation.z],
             [msg.rotation.x, msg.rotation.y, msg.rotation.z, msg.rotation.w],
         )
 
     @classmethod
-    def from_Pose_message(cls, msg):
+    def from_Pose_message(cls, msg: Pose):
+        """
+        Constructs a transform from a :class:`geometry_msgs.msg.Pose` message.
+        """
         return cls(
             [msg.position.x, msg.position.y, msg.position.z],
             [
@@ -64,12 +104,12 @@ class Transform(object):
             ],
         )
 
-    def __init__(self, p, q):
+    def __init__(self, p: List[float], q: List[float]):
         self._p = numpy.array(p)
         self._q = numpy.array(q)
         self._q_mat = transformations.quaternion_matrix(self._q)[:3, :3]
 
-    def __sub__(self, other):
+    def __sub__(self, other: Transform):
         return numpy.concatenate(
             [
                 self._p - other._p,
@@ -82,7 +122,7 @@ class Transform(object):
             ]
         )
 
-    def __add__(self, other):
+    def __add__(self, other: Transform):
         return Transform(
             self._p + other[:3],
             transformations.quaternion_multiply(
@@ -91,13 +131,19 @@ class Transform(object):
             ),
         )
 
-    def __mul__(self, other):
+    def __mul__(self, other: Transform):
         return Transform(
             self._p + self._q_mat.dot(other._p),
             transformations.quaternion_multiply(self._q, other._q),
         )
 
-    def inverse(self):
+    def inverse(self) -> Transform:
+        """
+        Constructs an inverse transform.
+
+        Returns:
+            Transform: The inverse transform.
+        """
         return Transform(
             -self._q_mat.T.dot(self._p),
             transformations.quaternion_inverse(self._q),
@@ -129,8 +175,12 @@ def _make_absolute(frame_id):
     return frame_id
 
 
-class TransformListener(object):
-    def __init__(self, node_handle, history_length=genpy.Duration(10)):
+class TransformListener:
+    def __init__(
+        self,
+        node_handle: NodeHandle,
+        history_length: genpy.Duration = genpy.Duration(10),
+    ):
         self._node_handle = node_handle
         self._history_length = history_length
 
@@ -145,7 +195,10 @@ class TransformListener(object):
             "/tf", TFMessage, self._got_tfs
         )
 
-    def shutdown(self):
+    def shutdown(self) -> None:
+        """
+        Shuts the transform listener down.
+        """
         self._tf_subscriber.shutdown()
 
     def _got_tfs(self, msg):
@@ -289,19 +342,37 @@ class _TooFutureError(Exception):
 
 
 class TooPastError(Exception):
-
     """
     User asked for a transform that will never known because it's from before
-    the start of the history buffer
+    the start of the history buffer.
+
+    Inherits from :class:`Exception`.
     """
 
 
-class TransformBroadcaster(object):
-    def __init__(self, node_handle):
+class TransformBroadcaster:
+    """
+    Broadasts transforms onto a topic.
+    """
+    def __init__(self, node_handle: NodeHandle):
+        """
+        Args:
+            node_handle (NodeHandle): The node handle used to communicate with the
+                ROS master server.
+        """
         self._node_handle = node_handle
         self._tf_publisher = self._node_handle.advertise("/tf", TFMessage)
 
-    def send_transform(self, transform):
+    def send_transform(self, transform: TransformStamped):
+        """
+        Sends a stamped Transform message onto the publisher.
+
+        Args:
+            transform (TransformStamped): The transform to publish onto the topic.
+
+        Raises:
+            TypeError: The transform class was not of the TransformStamped class.
+        """
         if not isinstance(transform, TransformStamped):
             raise TypeError("expected TransformStamped")
         self._tf_publisher.publish(
