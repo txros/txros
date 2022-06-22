@@ -7,11 +7,22 @@ import types
 from twisted.internet import defer, reactor, protocol, stdio
 from twisted.python import failure
 from twisted.protocols import basic
+from typing import Generator, Callable
 
 import genpy
 
 
-def wall_sleep(duration):
+def wall_sleep(duration: genpy.Duration) -> defer.Deferred:
+    """
+    Sleeps for a specified duration using a Deferred object.
+
+    Args:
+        duration (genpy.Duration): The amount of time to sleep for.
+
+    Returns:
+        defer.Deferred: The deferred object which sleeps for the specified amount
+            of time.
+    """
     if isinstance(duration, genpy.Duration):
         duration = duration.to_sec()
     elif not isinstance(duration, (float, int)):
@@ -80,7 +91,7 @@ class InlineCallbacksCancelled(BaseException):
     __repr__ = __str__
 
 
-def _step(cur, gen, currently_waiting_on, mine, df, has_been_cancelled):
+def _step(cur, gen, currently_waiting_on, mine, df: defer.Deferred, has_been_cancelled: bool):
     if currently_waiting_on[0] is not mine:
         # print 'result', repr(cur), 'ignored'
         return
@@ -184,11 +195,11 @@ def _step(cur, gen, currently_waiting_on, mine, df, has_been_cancelled):
         break
 
 
-def cancellableInlineCallbacks(f):
+def cancellableInlineCallbacks(f: Callable[[], Generator]):
     from functools import wraps
 
     @wraps(f)
-    def runner(*args, **kwargs):
+    def runner(*args, **kwargs) -> DeferredCancelDeferred:
         # another direct copy from twisted.internet.defer; however, in this case, I wrote this
         try:
             gen = f(*args, **kwargs)
@@ -204,7 +215,10 @@ def cancellableInlineCallbacks(f):
             )
         # end copy
 
-        def cancelled(df_):
+        def cancelled(_: defer.Deferred):
+            """
+            Serves as the canceller for the inline cancellable Deferred object.
+            """
             # assert df_ is df
             assert currently_waiting_on[0] is not None
             x = currently_waiting_on[0]
@@ -214,7 +228,7 @@ def cancellableInlineCallbacks(f):
             if isinstance(cancel_result, defer.Deferred):
 
                 @cancel_result.addBoth
-                def _(res):
+                def _(res) -> UncancellableDeferred:
                     if isinstance(res, failure.Failure):
                         print(res)
                     df2 = UncancellableDeferred()
