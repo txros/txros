@@ -1,42 +1,66 @@
+from __future__ import annotations
 import itertools
 import weakref
+from typing import Any, Optional, Callable, List, Dict
 
 from twisted.internet import defer, reactor
 from twisted.python import failure, log
 
 
-class Event(object):
+class Event:
+    """
+    Represents an event in the txROS suite. Commonly used for monitoring changes
+    in the value of specific objects.
+
+    Attributes:
+        observers (Dict[int, Callable[[Any], None]]): The totality of observers
+            attached to the given event.
+        id_generator (itertools.count[int]): A count generator responsible for generating
+            unique new IDs for each observer added.
+    """
     def __init__(self):
-        self.observers = {}
+        self.observers: Dict[int, Callable[[Any], None]] = {}
         self.id_generator = itertools.count()
         self._once = None
         self.times = 0
 
-    def run_and_watch(self, func):
+    def run_and_watch(self, func: Callable[[Any], None]):
         func()
         return self.watch(func)
 
-    def watch_weakref(self, obj, func):
+    def watch_weakref(self, obj: Any, func: Callable[[Any], None]):
         # func must not contain a reference to obj!
         watch_id = self.watch(lambda *args: func(obj_ref(), *args))
         obj_ref = weakref.ref(obj, lambda _: self.unwatch(watch_id))
 
-    def watch(self, func):
-        id = self.id_generator.next()
+    def watch(self, func: Callable[[Any], None]) -> int:
+        """
+        Adds an observer with the given callable.
+
+        Args:
+            function (Callable[[Any], None]): The function observer to add.
+        """
+        id = next(self.id_generator)
         self.observers[id] = func
         return id
 
-    def unwatch(self, id):
+    def unwatch(self, id: int) -> None:
+        """
+        Removes the observer with the given ID.
+
+        Args:
+            id (int): The ID of the observer to remove.
+        """
         self.observers.pop(id)
 
     @property
-    def once(self):
+    def once(self) -> Optional[Event]:
         res = self._once
         if res is None:
             res = self._once = Event()
         return res
 
-    def happened(self, *event):
+    def happened(self, *event: Any) -> None:
         self.times += 1
 
         once, self._once = self._once, None
@@ -50,7 +74,7 @@ class Event(object):
         if once is not None:
             once.happened(*event)
 
-    def get_deferred(self, timeout=None):
+    def get_deferred(self, timeout: Optional[float] = None) -> defer.Deferred:
         once = self.once
         df = defer.Deferred()
         id1 = once.watch(lambda *event: df.callback(event))
@@ -66,13 +90,13 @@ class Event(object):
         return df
 
 
-class Variable(object):
-    def __init__(self, value):
+class Variable:
+    def __init__(self, value: Any):
         self.value = value
         self.changed = Event()
         self.transitioned = Event()
 
-    def set(self, value):
+    def set(self, value: Any):
         if value == self.value:
             return
 
@@ -81,7 +105,7 @@ class Variable(object):
         self.changed.happened(value)
         self.transitioned.happened(oldvalue, value)
 
-    def when_satisfies(self, func):
+    def when_satisfies(self, func) -> Event:
         res = Event()
 
         def _(value):
@@ -92,11 +116,27 @@ class Variable(object):
         return res
 
     @defer.inlineCallbacks
-    def get_when_satisfies(self, func):
+    def get_when_satisfies(self, func) -> defer.Deferred:
+        """
+        Returns the value of the variable when the value passed into a callable
+        returns true.
+
+        Args:
+            func (Callable[[Any], bool]): The check function.
+
+        Returns:
+            defer.Deferred: The defer object containing the return value.
+        """
         while True:
             if func(self.value):
                 defer.returnValue(self.value)
             yield self.changed.once.get_deferred()
 
-    def get_not_none(self):
+    def get_not_none(self) -> defer.Deferred:
+        """
+        Returns the value of the variable when it is not None through a Deferred.
+
+        Returns:
+            defer.Deferred: The defer object containing the return value.
+        """
         return self.get_when_satisfies(lambda val: val is not None)
