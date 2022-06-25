@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import struct
-from typing import List, Dict, Iterable
+from typing import List, Dict, Iterator
 
 from twisted.internet import defer, protocol
 
@@ -18,8 +18,8 @@ def deserialize_list(s: bytes) -> List[bytes]:
     return res
 
 
-def serialize_list(lst: Iterable[str]) -> str:
-    return "".join(struct.pack("<I", len(x)).decode() + x for x in lst)
+def serialize_list(lst: Iterator[bytes]) -> bytes:
+    return b"".join(struct.pack("<I", len(x)) + x for x in lst)
 
 
 def deserialize_dict(s: bytes) -> Dict[bytes, bytes]:
@@ -30,17 +30,17 @@ def deserialize_dict(s: bytes) -> Dict[bytes, bytes]:
     return res
 
 
-def serialize_dict(s: Dict[str, str]) -> str:
-    return serialize_list("%s=%s" % (k, v) for k, v in s.items())
+def serialize_dict(s: Dict[str, str]) -> bytes:
+    return serialize_list(f"{k}={v}".encode() for k, v in s.items())
 
 
 class Protocol(protocol.Protocol):
     def __init__(self):
         self._df_type = None
-        self._buf = ""
+        self._buf = b""
         self._error = None
 
-    def dataReceived(self, data):
+    def dataReceived(self, data: bytes):
         self._buf += data
         self._think()
 
@@ -72,22 +72,22 @@ class Protocol(protocol.Protocol):
         else:
             assert False
 
-    def _receive(self, type_):
+    def _receive(self, type_) -> defer.Deferred:
         assert self._df_type is None
         df = defer.Deferred()
         self._df_type = df, type_
         self._think()
         return df
 
-    def receiveByte(self):
+    def receiveByte(self) -> defer.Deferred:
         return self._receive("byte")
 
-    def receiveString(self):
+    def receiveString(self) -> defer.Deferred:
         return self._receive("string")
 
     def sendByte(self, byte: bytes):
         assert len(byte) == 1
         self.transport.write(byte)
 
-    def sendString(self, string: str):
-        self.transport.write(struct.pack("<I", len(string)) + string.encode())
+    def sendString(self, string: bytes) -> None:
+        self.transport.write(struct.pack("<I", len(string)) + string)

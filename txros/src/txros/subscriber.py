@@ -142,7 +142,7 @@ class Subscriber:
     def _publisher_thread(self, url):
         while True:
             try:
-                proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(url), self._node_handle._name)
+                proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(url.encode()), self._node_handle._name)
                 value = yield proxy.requestTopic(self._name, [["TCPROS"]])
 
                 protocol, host, port = value
