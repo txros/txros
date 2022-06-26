@@ -11,7 +11,7 @@ from geometry_msgs.msg import Transform, TransformStamped, Quaternion, Vector3
 from std_msgs.msg import Header
 from tf import transformations
 
-from txros import tf, util
+from txros import txros_tf, util
 from txros.test import util as test_util
 
 
@@ -21,7 +21,7 @@ class Test(unittest.TestCase):
     def test_tf(self):
         @defer.inlineCallbacks
         def f(nh):
-            tf_broadcaster = tf.TransformBroadcaster(nh)
+            tf_broadcaster = txros_tf.TransformBroadcaster(nh)
 
             @apply
             @util.cancellableInlineCallbacks
@@ -44,18 +44,18 @@ class Test(unittest.TestCase):
                 except Exception:
                     traceback.print_exc()
             try:
-                tf_listener = tf.TransformListener(nh, history_length=genpy.Duration(
+                tf_listener = txros_tf.TransformListener(nh, history_length=genpy.Duration(
                     1))  # short history length so that we cover history being truncated
 
                 try:
                     yield tf_listener.get_transform('/parent', '/child', nh.get_time() - genpy.Duration(100))
-                except tf.TooPastError:
+                except txros_tf.TooPastError:
                     pass
                 else:
                     self.fail('expected TooPastError')
 
                 start_time = nh.get_time()
-                for i in xrange(200):
+                for i in range(200):
                     time = start_time + genpy.Duration.from_sec(1 + i / 100)
                     dt = 1e-3
                     transform = yield tf_listener.get_transform('/parent', '/child', time)

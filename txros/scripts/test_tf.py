@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import traceback
 
@@ -6,14 +6,14 @@ import genpy
 
 import txros
 from txros import util
-from txros import tf
+from txros import txros_tf
 
 
 @util.cancellableInlineCallbacks
 def main():
     nh = yield txros.NodeHandle.from_argv("test_tf", anonymous=True)
 
-    tf_listener = tf.TransformListener(nh)
+    tf_listener = txros_tf.TransformListener(nh)
 
     while True:
         try:

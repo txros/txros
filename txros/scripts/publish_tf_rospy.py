@@ -1,12 +1,12 @@
 #!/usr/bin/python3
 
 import rospy
-import tf
+import txros
 from tf import transformations
 
 rospy.init_node("publish_tf_rospy")
 
-tf_broadcaster = tf.TransformBroadcaster()
+tf_broadcaster = txros.TransformBroadcaster()
 
 while not rospy.is_shutdown():
     t = rospy.Time.now()
