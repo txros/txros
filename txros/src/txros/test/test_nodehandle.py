@@ -1,5 +1,3 @@
-from __future__ import division
-
 from twisted.internet import defer
 from twisted.trial import unittest
 
@@ -8,7 +6,6 @@ from txros.test import util as test_util
 
 
 class Test(unittest.TestCase):
-
     @defer.inlineCallbacks
     def test_creation(self):
         yield test_util.call_with_nodehandle(lambda nh: defer.succeed(None))
@@ -17,8 +14,8 @@ class Test(unittest.TestCase):
     def test_params(self):
         @defer.inlineCallbacks
         def f(nh):
-            k = '/my_param'
-            v = ['hi', 2]
+            k = "/my_param"
+            v = ["hi", 2]
 
             assert not (yield nh.has_param(k))
             yield nh.set_param(k, v)
@@ -26,6 +23,7 @@ class Test(unittest.TestCase):
             assert (yield nh.get_param(k)) == v
             yield nh.delete_param(k)
             assert not (yield nh.has_param(k))
+
         yield test_util.call_with_nodehandle(f)
 
     @defer.inlineCallbacks
@@ -33,11 +31,13 @@ class Test(unittest.TestCase):
         @defer.inlineCallbacks
         def f(nh):
             from std_msgs.msg import Int32
-            pub = nh.advertise('/my_topic', Int32, latching=True)
+
+            pub = nh.advertise("/my_topic", Int32, latching=True)
             pub.publish(Int32(42))
-            sub = nh.subscribe('/my_topic', Int32)
+            sub = nh.subscribe("/my_topic", Int32)
             yield sub.get_next_message()
             assert sub.get_last_message().data == 42
+
         yield test_util.call_with_nodehandle(f)
 
     @defer.inlineCallbacks
@@ -48,14 +48,16 @@ class Test(unittest.TestCase):
 
             @util.cancellableInlineCallbacks
             def callback(req):
-                yield util.wall_sleep(.5)
+                yield util.wall_sleep(0.5)
                 defer.returnValue(TwoIntsResponse(sum=req.a + req.b))
-            nh.advertise_service('/my_service', TwoInts, callback)
 
-            s = nh.get_service_client('/my_service', TwoInts)
+            nh.advertise_service("/my_service", TwoInts, callback)
+
+            s = nh.get_service_client("/my_service", TwoInts)
             yield s.wait_for_service()
             assert (yield s(TwoIntsRequest(a=10, b=30))).sum == 40
             assert (yield s(TwoIntsRequest(a=-10, b=30))).sum == 20
+
         yield test_util.call_with_nodehandle(f)
 
     @defer.inlineCallbacks
@@ -69,4 +71,5 @@ class Test(unittest.TestCase):
             t2 = time.time()
 
             assert t2 - t1 < 5
+
         yield test_util.call_with_nodehandle_sim_time(f)

@@ -1,5 +1,3 @@
-from __future__ import division
-
 import os
 import tempfile
 import shutil
@@ -18,32 +16,32 @@ from txros import NodeHandle, util
 def start_rosmaster():
     tmpd = tempfile.mkdtemp()
     try:
-        logfile = '%s/master.log' % (tmpd,)
-        p = subprocess.Popen(['rosmaster', '--core', '-p', '0', '__log:=' + logfile])
+        logfile = "%s/master.log" % (tmpd,)
+        p = subprocess.Popen(["rosmaster", "--core", "-p", "0", "__log:=" + logfile])
 
-        for i in xrange(1000):
+        for i in range(1000):
             if os.path.exists(logfile):
                 success = False
-                with open(logfile, 'rb') as f:
+                with open(logfile, "rb") as f:
                     for line in f:
-                        if ': Master initialized: port[0], uri[http://' in line:
-                            port = int(line.split(':')[-1].split('/')[0])
+                        if b": Master initialized: port[0], uri[http://" in line:
+                            port = int(line.split(b":")[-1].split(b"/")[0])
                             success = True
                             break
                 if success:
                     break
-            yield util.wall_sleep(.01)
+            yield util.wall_sleep(0.01)
         else:
-            assert False, 'rosmaster never came up'
+            assert False, "rosmaster never came up"
 
-        class ROSMaster(object):
-
+        class ROSMaster:
             def get_port(self):
                 return port
 
             def stop(self):
                 p.terminate()
                 return threads.deferToThread(p.wait)
+
         defer.returnValue(ROSMaster())
     finally:
         shutil.rmtree(tmpd)
@@ -53,10 +51,14 @@ def start_rosmaster():
 def call_with_nodehandle(f):
     rosmaster = yield start_rosmaster()
     try:
-        nh = yield NodeHandle.from_argv('node',
-                                        argv=['__ip:=127.0.0.1',
-                                              '__master:=http://127.0.0.1:%i' % (rosmaster.get_port(),), ],
-                                        anonymous=True,)
+        nh = yield NodeHandle.from_argv(
+            "node",
+            argv=[
+                "__ip:=127.0.0.1",
+                "__master:=http://127.0.0.1:%i" % (rosmaster.get_port(),),
+            ],
+            anonymous=True,
+        )
         try:
             defer.returnValue((yield f(nh)))
         finally:
@@ -69,32 +71,44 @@ def call_with_nodehandle(f):
 def call_with_nodehandle_sim_time(f):
     rosmaster = yield start_rosmaster()
     try:
-        nh = yield NodeHandle.from_argv('node',
-                                        argv=['__ip:=127.0.0.1',
-                                              '__master:=http://127.0.0.1:%i' % (rosmaster.get_port(),), ],
-                                        anonymous=True,)
+        nh = yield NodeHandle.from_argv(
+            "node",
+            argv=[
+                "__ip:=127.0.0.1",
+                "__master:=http://127.0.0.1:%i" % (rosmaster.get_port(),),
+            ],
+            anonymous=True,
+        )
         try:
+
             @apply
             @util.cancellableInlineCallbacks
             def clock_thread():
                 try:
-                    clock_pub = nh.advertise('/clock', Clock)
+                    clock_pub = nh.advertise("/clock", Clock)
                     t = genpy.Time.from_sec(12345)
                     while True:
-                        clock_pub.publish(Clock(
-                            clock=t,
-                        ))
-                        yield util.wall_sleep(.01)
-                        t = t + genpy.Duration.from_sec(.1)
+                        clock_pub.publish(
+                            Clock(
+                                clock=t,
+                            )
+                        )
+                        yield util.wall_sleep(0.01)
+                        t = t + genpy.Duration.from_sec(0.1)
                 except Exception:
                     traceback.print_exc()
-            try:
-                yield nh.set_param('/use_sim_time', True)
 
-                nh2 = yield NodeHandle.from_argv('node2',
-                                                 argv=['__ip:=127.0.0.1',
-                                                       '__master:=http://127.0.0.1:%i' % (rosmaster.get_port(),), ],
-                                                 anonymous=True,)
+            try:
+                yield nh.set_param("/use_sim_time", True)
+
+                nh2 = yield NodeHandle.from_argv(
+                    "node2",
+                    argv=[
+                        "__ip:=127.0.0.1",
+                        "__master:=http://127.0.0.1:%i" % (rosmaster.get_port(),),
+                    ],
+                    anonymous=True,
+                )
                 try:
                     defer.returnValue((yield f(nh2)))
                 finally:

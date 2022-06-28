@@ -1,5 +1,3 @@
-from __future__ import division
-
 from twisted.internet import defer, reactor
 from twisted.trial import unittest
 
@@ -7,11 +5,10 @@ from txros import util
 
 
 class Test(unittest.TestCase):
-
     @defer.inlineCallbacks
     def test_wall_sleep(self):
         t1 = reactor.seconds()
-        yield util.wall_sleep(2.)
+        yield util.wall_sleep(2.0)
         t2 = reactor.seconds()
 
         assert 1 <= t2 - t1 <= 3
@@ -19,10 +16,12 @@ class Test(unittest.TestCase):
     @defer.inlineCallbacks
     def test_wrap_timeout1(self):
         try:
+
             @util.cancellableInlineCallbacks
             def f():
                 yield util.wall_sleep(1)
-                defer.returnValue('retval')
+                defer.returnValue("retval")
+
             yield util.wrap_timeout(f(), 3)
         except util.TimeoutError:
             assert False
@@ -32,10 +31,12 @@ class Test(unittest.TestCase):
     @defer.inlineCallbacks
     def test_wrap_timeout2(self):
         try:
+
             @util.cancellableInlineCallbacks
             def f():
                 yield util.wall_sleep(3)
-                defer.returnValue('retval')
+                defer.returnValue("retval")
+
             yield util.wrap_timeout(f(), 1)
         except util.TimeoutError:
             pass
