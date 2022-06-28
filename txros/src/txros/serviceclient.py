@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from io import StringIO
+from io import BytesIO
 from typing import TYPE_CHECKING, Protocol, Type
 
 import genpy
@@ -98,7 +98,7 @@ class ServiceClient:
             tcpros.deserialize_dict((yield conn.receiveString()))
 
             # request could be sent before header is received to reduce latency...
-            x = StringIO()
+            x = BytesIO()
             self._type._request_class.serialize(req, x)
             data = x.getvalue()
             conn.sendString(data)

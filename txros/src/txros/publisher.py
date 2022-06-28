@@ -1,6 +1,6 @@
 from __future__ import annotations
 import traceback
-from io import StringIO
+from io import BytesIO
 from typing import TYPE_CHECKING, Type
 
 import genpy
@@ -143,7 +143,7 @@ class Publisher:
         Args:
             msg (genpy.Message): The ROS message to send to all connected clients.
         """
-        x = StringIO()
+        x = BytesIO()
         self._type.serialize(msg, x)
         data = x.getvalue()
 

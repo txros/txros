@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import traceback
-from io import StringIO
+from io import BytesIO
 from typing import TYPE_CHECKING, Callable
 import genpy
 
@@ -12,6 +12,7 @@ from . import util, tcpros
 if TYPE_CHECKING:
     from .nodehandle import NodeHandle
     from .serviceclient import ServiceType
+    from .tcpros import Protocol
 
 
 class Service:
@@ -90,7 +91,7 @@ class Service:
         return util.branch_deferred(self._shutdown_finished)
 
     @util.cancellableInlineCallbacks
-    def _handle_tcpros_conn(self, headers, conn):
+    def _handle_tcpros_conn(self, _, conn: Protocol):
         try:
             # check headers
 
@@ -113,11 +114,11 @@ class Service:
                     resp = yield self._callback(req)
                 except Exception as e:
                     traceback.print_exc()
-                    conn.sendByte(chr(0))
-                    conn.sendString(str(e))
+                    conn.sendByte(chr(0).encode())
+                    conn.sendString(str(e).encode())
                 else:
-                    conn.sendByte(chr(1))
-                    x = StringIO.StringIO()
+                    conn.sendByte(chr(1).encode())
+                    x = BytesIO()
                     self._type._response_class.serialize(resp, x)
                     conn.sendString(x.getvalue())
         except (error.ConnectionDone, error.ConnectionLost):
