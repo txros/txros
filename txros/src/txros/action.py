@@ -13,6 +13,7 @@ from . import util
 
 if TYPE_CHECKING:
     from .nodehandle import NodeHandle
+    from .action import GoalManager
 
 
 class ActionMessage(Protocol):
@@ -72,9 +73,11 @@ class GoalManager:
             traceback.print_exc()
 
     def _status_callback(self, status):
+        del status
         pass  # XXX update state
 
     def _result_callback(self, status, result):
+        del status
         # XXX update state
         # XXX cancel feedback deferreds
 
@@ -84,6 +87,7 @@ class GoalManager:
 
     def _feedback_callback(self, status, feedback):
         # XXX update state
+        del status
 
         old, self._feedback_dfs = self._feedback_dfs, []
         for df in old:
@@ -98,7 +102,7 @@ class GoalManager:
         """
         return util.branch_deferred(self._result_df, lambda df_: self.cancel())
 
-    def get_feedback(self) -> None:
+    def get_feedback(self) -> defer.Deferred:
         """
         Gets the feedback from all feedback Deferred objects.
         """
@@ -160,7 +164,7 @@ class Goal:
         self.status_text = status_text
 
     def __eq__(self, rhs: Goal):
-        assert isinstance(self.goal, GoalStatus)
+        # assert isinstance(self.goal, GoalStatus), f"Value was {type(self.goal)}: {self.goal}"
         return self.goal.goal_id.id == rhs.goal.goal_id.id
 
     def status_msg(self) -> GoalStatus:
@@ -173,7 +177,7 @@ class Goal:
         msg = GoalStatus()
 
         # Type checking
-        assert isinstance(self.goal, GoalStatus)
+        # assert isinstance(self.goal, GoalStatus), f"Value was {type(self.goal)}: {self.goal}"
 
         # Assemble message
         msg.goal_id = self.goal.goal_id
@@ -258,7 +262,7 @@ class SimpleActionServer:
             self._name + "/cancel", GoalID, self._cancel_cb
         )
 
-    def register_goal_callback(self, func: Callable) -> None:
+    def register_goal_callback(self, func: Optional[Callable]) -> None:
         self.goal_cb = func
 
     def _process_goal_callback(self):
@@ -269,7 +273,7 @@ class SimpleActionServer:
         if self.preempt_cb:
             self.preempt_cb()
 
-    def register_preempt_callback(self, func: Callable) -> None:
+    def register_preempt_callback(self, func: Optional[Callable]) -> None:
         self.preempt_cb = func
 
     def start(self) -> None:
@@ -520,7 +524,7 @@ class ActionClient:
         self._result_type = type(action_type().action_result)
         self._feedback_type = type(action_type().action_feedback)
 
-        self._goal_managers = {}
+        self._goal_managers: dict[str, GoalManager] = {}
 
         self._goal_pub = self._node_handle.advertise(
             self._name + "/goal", self._goal_type
@@ -536,7 +540,7 @@ class ActionClient:
             self._name + "/feedback", self._feedback_type, self._feedback_callback
         )
 
-    def _status_callback(self, msg):
+    def _status_callback(self, msg: GoalStatusArray):
         for status in msg.status_list:
             if status.goal_id.id in self._goal_managers:
                 manager = self._goal_managers[status.goal_id.id]

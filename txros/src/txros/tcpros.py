@@ -22,10 +22,11 @@ def serialize_list(lst: Iterator[bytes]) -> bytes:
     return b"".join(struct.pack("<I", len(x)) + x for x in lst)
 
 
-def deserialize_dict(s: bytes) -> Dict[bytes, bytes]:
+def deserialize_dict(s: bytes) -> Dict[str, str]:
     res = {}
     for item in deserialize_list(s):
         key, value = item.split(b"=", 1)
+        key, value = key.decode(), value.decode()
         res[key] = value
     return res
 

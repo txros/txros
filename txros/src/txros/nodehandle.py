@@ -10,7 +10,7 @@ import time
 from twisted.web import server, xmlrpc
 from twisted.internet import defer, error, reactor
 from twisted.internet.tcp import Port
-from typing import Tuple, List, Any, Union
+from typing import Tuple, List, Any, Union, TYPE_CHECKING
 
 import genpy
 from roscpp.srv import (
@@ -20,6 +20,9 @@ from roscpp.srv import (
     SetLoggerLevelResponse,
 )
 from rosgraph_msgs.msg import Clock
+
+if TYPE_CHECKING:
+    from .tcpros import Protocol
 
 from . import util, tcpros, publisher, rosxmlrpc, service, serviceclient, subscriber
 
@@ -207,7 +210,7 @@ class NodeHandle:
         self._tcpros_handlers = {}
 
         @util.cancellableInlineCallbacks
-        def _handle_tcpros_conn(conn):
+        def _handle_tcpros_conn(conn: Protocol):
             try:
                 header = tcpros.deserialize_dict((yield conn.receiveString()))
 

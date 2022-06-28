@@ -10,6 +10,7 @@ from txros import tcpros, util
 
 if TYPE_CHECKING:
     from .nodehandle import NodeHandle
+    from .tcpros import Protocol
 
 
 class Publisher:
@@ -26,6 +27,11 @@ class Publisher:
             new connections are immediately sent the most recently sent message
             when they connect to the publisher.
     """
+
+    _connections: dict[Protocol, Any]
+    _name: str
+    _node_handle: NodeHandle
+
     def __init__(
         self,
         node_handle: NodeHandle,
@@ -105,7 +111,7 @@ class Publisher:
         )
 
     @util.cancellableInlineCallbacks
-    def _handle_tcpros_conn(self, headers, conn):
+    def _handle_tcpros_conn(self, headers, conn: Protocol):
         try:
             # XXX handle headers
 
