@@ -7,12 +7,12 @@ import types
 from twisted.internet import defer, reactor, protocol, stdio
 from twisted.python import failure
 from twisted.protocols import basic
-from typing import Generator, Callable
+from typing import Generator, Callable, Union
 
 import genpy
 
 
-def wall_sleep(duration: genpy.Duration) -> defer.Deferred:
+def wall_sleep(duration: Union[genpy.Duration, float]) -> defer.Deferred:
     """
     Sleeps for a specified duration using a Deferred object.
 

@@ -30,6 +30,11 @@ class GoalManager:
     Manages the interactions between a specific goal and an action client.
     """
 
+    _action_client: ActionClient
+    _goal: Goal
+    _goal_id: str
+    _feedback_dfs: list[defer.Deferred]
+
     def __init__(self, action_client: ActionClient, goal: Goal):
         """
         Args:
@@ -150,6 +155,10 @@ class Goal:
         status (uint8): An enum representing the status of
         status_text (:class:`str`): A string representing the status of the goal
     """
+
+    goal: Any # This needs to be defined
+    status: int
+    status_text: str
 
     def __init__(
         self,

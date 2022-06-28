@@ -8,9 +8,9 @@ import yaml
 import time
 
 from twisted.web import server, xmlrpc
-from twisted.internet import defer, error, reactor
+from twisted.internet import defer, error, reactor, interfaces
 from twisted.internet.tcp import Port
-from typing import Tuple, List, Any, Union, TYPE_CHECKING
+from typing import Tuple, List, Any, Union, TYPE_CHECKING, Callable
 
 import genpy
 from roscpp.srv import (
@@ -44,7 +44,7 @@ class _XMLRPCSlave(xmlrpc.XMLRPC):
         # list of (connectionId, destinationId, direction, transport, topic, connected)
         return 1, "success", []  # XXX
 
-    def xmlrpc_getMasterUri(self, _):
+    def xmlrpc_getMasterUri(self, _) -> tuple[int, str, str]:
         return 1, "success", self._node_handle._master_uri
 
     @util.cancellableInlineCallbacks
@@ -89,6 +89,25 @@ class _XMLRPCSlave(xmlrpc.XMLRPC):
 
 
 class NodeHandle:
+
+    _master_uri: str
+    _ns: str
+    _name: str
+    _addr: str
+    _shutdown_callbacks: set[Callable]
+    _xmlrpc_server: Port
+    _tcpros_server_uri: str
+    _is_running: bool
+    _master_proxy: rosxmlrpc.Proxy
+    _xmlrpc_server_uri: str
+    _tcpros_handlers: dict[tuple[str, str], Callable[[dict[str, str], Protocol], None]]
+    _xmlrpc_handlers: dict[tuple[str, str], Callable[[Any], tuple[int, str, Any]]]
+    _tcpros_server: interfaces.IListeningPort
+    _use_sim_time: bool
+    _clock_sub: subscriber.Subscriber
+    _remappings: dict[str, str]
+    _sim_time: genpy.Time
+
     @classmethod
     @util.cancellableInlineCallbacks
     def from_argv_with_remaining(cls, default_name: str, argv = None, anonymous: bool = False):
@@ -198,7 +217,7 @@ class NodeHandle:
         self._is_running = True
 
         self._xmlrpc_handlers = {}
-        self._xmlrpc_server: Port = reactor.listenTCP(
+        self._xmlrpc_server = reactor.listenTCP(
             0, server.Site(_XMLRPCSlave(self))
         )
         self._shutdown_callbacks.add(self._xmlrpc_server.loseConnection)
@@ -214,7 +233,7 @@ class NodeHandle:
             try:
                 header = tcpros.deserialize_dict((yield conn.receiveString()))
 
-                def default(header, conn):
+                def default(header: dict[str, str], conn: Protocol):
                     conn.sendString(
                         tcpros.serialize_dict(dict(error="unhandled connection"))
                     )
@@ -283,7 +302,7 @@ class NodeHandle:
             self._use_sim_time = False
         if self._use_sim_time:
 
-            def got_clock(msg):
+            def got_clock(msg: Clock):
                 self._sim_time = msg.clock
 
             self._clock_sub = self.subscribe("/clock", Clock, got_clock)
@@ -296,7 +315,7 @@ class NodeHandle:
 
         for k, v in self._remappings.items():
             if k.startswith("_") and not k.startswith("__"):
-                yield self.set_param(self.resolve_name("~" + k[1:]), yaml.load(v))
+                yield self.set_param(self.resolve_name("~" + k[1:]), yaml.safe_load(v))
 
         self.advertise_service(
             "~get_loggers", GetLoggers, lambda req: GetLoggersResponse()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 import traceback
 from io import BytesIO
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, Type, Any
 
 import genpy
 from twisted.internet import defer, error
