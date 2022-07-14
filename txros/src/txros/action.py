@@ -203,7 +203,7 @@ class SimpleActionServer:
 
     .. code-block:: python
 
-        >>> # Contruct a SimpleActionServer with a node handle, topic namespace, and type
+        >>> # Construct a SimpleActionServer with a node handle, topic namespace, and type
         >>> serv = SimpleActionServer(nh, '/test_action', turtle_actionlib.msg.ShapeAction)
         >>> # The server must be started before any goals can be accepted
         >>> serv.start()
@@ -215,7 +215,7 @@ class SimpleActionServer:
         >>> serv.publish_feedback(ShapeFeedback())
         >>> # To accept a preempt (a new goal attempted to replace the current one)
         >>> if self.is_preempt_requested():
-        ...     goal = serv.accept_new_goal()  # Automaticly cancels old goal
+        ...     goal = serv.accept_new_goal()  # Automatically cancels old goal
         >>> # To finish a goal
         >>> serv.set_succeeded(text='Wahoo!', result=ShapeResult(apothem=1))
         >>> # or
@@ -470,7 +470,7 @@ class SimpleActionServer:
                 cancel_next = True
         if cancel_next:
             self.next_goal.status = GoalStatus.RECALLED
-            self.next_goal.status_text = "Goal cancled"
+            self.next_goal.status_text = "Goal canceled"
             result_msg = self._result_type()
             result_msg.status = self.next_goal.status_msg()
             self._result_pub.publish(result_msg)
