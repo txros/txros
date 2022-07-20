@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 import traceback
-from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol, Literal
 
 import genpy
 from actionlib_msgs.msg import GoalID, GoalStatus, GoalStatusArray
@@ -13,8 +13,8 @@ from . import util
 
 if TYPE_CHECKING:
     from .nodehandle import NodeHandle
-    from .action import GoalManager
 
+GoalStatusRange = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 class ActionMessage(Protocol):
     action_goal: genpy.Message
@@ -54,6 +54,8 @@ class GoalManager:
         self._result_df = defer.Deferred()
 
         self._think_thread = self._think()
+        import rospy
+        rospy.logerr(f"A goal manager has been made! {self.__dict__}")
 
     @util.cancellableInlineCallbacks
     def _think(self):
@@ -148,7 +150,9 @@ class Goal:
 
         .. describe:: x = y
 
-            determines equality between two goals by comparing their ids.
+            Determines equality between two goals by comparing their ids. If
+            either side is not a :class:`actionlib_msgs.msg.GoalStatus`, then
+            the result is ``False``.
 
     Parameters:
         goal (GoalStatus): The original goal message which constructs this class
@@ -156,14 +160,14 @@ class Goal:
         status_text (:class:`str`): A string representing the status of the goal
     """
 
-    goal: Any # This needs to be defined
-    status: int
+    goal: GoalStatus | None # This needs to be defined
+    status: GoalStatusRange
     status_text: str
 
     def __init__(
         self,
         goal_msg: GoalStatus,
-        status: int = GoalStatus.PENDING,
+        status: GoalStatusRange = GoalStatus.PENDING,
         status_text: str = "",
     ):
         if goal_msg.goal_id.id == "":
@@ -171,10 +175,14 @@ class Goal:
         self.goal = goal_msg
         self.status = status
         self.status_text = status_text
+        import rospy
+        rospy.logerr(f"A goal has been made: {self.__dict__}")
 
     def __eq__(self, rhs: Goal):
         # assert isinstance(self.goal, GoalStatus), f"Value was {type(self.goal)}: {self.goal}"
-        return self.goal.goal_id.id == rhs.goal.goal_id.id
+        if isinstance(self.goal, GoalStatus) and isinstance(rhs.goal, GoalStatus):
+            return self.goal.goal_id.id == rhs.goal.goal_id.id
+        return False
 
     def status_msg(self) -> GoalStatus:
         """
