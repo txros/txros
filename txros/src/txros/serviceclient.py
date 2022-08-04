@@ -103,7 +103,7 @@ class ServiceClient:
             data = x.getvalue()
             conn.sendString(data)
 
-            result = ord((yield conn.receiveByte()))
+            result = yield conn.receiveByte()
             data = yield conn.receiveString()
             if result:  # success
                 defer.returnValue(self._type._response_class().deserialize(data))
