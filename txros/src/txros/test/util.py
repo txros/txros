@@ -1,22 +1,23 @@
+import asyncio
 import os
-import tempfile
 import shutil
 import subprocess
+import tempfile
 import traceback
 
-from twisted.internet import defer, threads
+from typing import Callable, Awaitable
 
 import genpy
 from rosgraph_msgs.msg import Clock
+from twisted.internet import defer, threads
 
 from txros import NodeHandle, util
 
 
-@defer.inlineCallbacks
-def start_rosmaster():
+async def start_rosmaster():
     tmpd = tempfile.mkdtemp()
     try:
-        logfile = "%s/master.log" % (tmpd,)
+        logfile = f"{tmpd}/master.log"
         p = subprocess.Popen(["rosmaster", "--core", "-p", "0", "__log:=" + logfile])
 
         for i in range(1000):
@@ -30,7 +31,7 @@ def start_rosmaster():
                             break
                 if success:
                     break
-            yield util.wall_sleep(0.01)
+            await util.wall_sleep(0.01)
         else:
             assert False, "rosmaster never came up"
 
@@ -40,38 +41,43 @@ def start_rosmaster():
 
             def stop(self):
                 p.terminate()
-                return threads.deferToThread(p.wait)
+                loop = asyncio.get_event_loop()
+                return loop.run_in_executor(None, p.wait)
 
-        defer.returnValue(ROSMaster())
+        return ROSMaster()
     finally:
         shutil.rmtree(tmpd)
 
 
-@defer.inlineCallbacks
-def call_with_nodehandle(f):
-    rosmaster = yield start_rosmaster()
+async def call_with_nodehandle(f: Callable[[NodeHandle], Awaitable]):
+    rosmaster = await start_rosmaster()
     try:
-        nh = yield NodeHandle.from_argv(
+        nh = await NodeHandle.from_argv(
             "node",
             argv=[
                 "__ip:=127.0.0.1",
-                "__master:=http://127.0.0.1:%i" % (rosmaster.get_port(),),
+                f"__master:=http://127.0.0.1:{rosmaster.get_port()}"
             ],
             anonymous=True,
         )
         try:
-            defer.returnValue((yield f(nh)))
+            print("getting result...")
+            result = await f(nh)
+            print(f"got result: {result}")
         finally:
-            yield nh.shutdown()
+            print("asking node to shutdown...")
+            await nh.shutdown()
+        print("returning result!")
+        return result
     finally:
-        yield rosmaster.stop()
+        print("stopping rosmaster")
+        await rosmaster.stop()
 
 
-@util.cancellableInlineCallbacks
-def call_with_nodehandle_sim_time(f):
-    rosmaster = yield start_rosmaster()
+async def call_with_nodehandle_sim_time(f):
+    rosmaster = await start_rosmaster()
     try:
-        nh = yield NodeHandle.from_argv(
+        nh = await NodeHandle.from_argv(
             "node",
             argv=[
                 "__ip:=127.0.0.1",
@@ -80,12 +86,10 @@ def call_with_nodehandle_sim_time(f):
             anonymous=True,
         )
         try:
-
-            @apply
-            @util.cancellableInlineCallbacks
-            def clock_thread():
+            async def clock_thread():
                 try:
                     clock_pub = nh.advertise("/clock", Clock)
+                    await clock_pub.setup()
                     t = genpy.Time.from_sec(12345)
                     while True:
                         clock_pub.publish(
@@ -93,15 +97,16 @@ def call_with_nodehandle_sim_time(f):
                                 clock=t,
                             )
                         )
-                        yield util.wall_sleep(0.01)
+                        await util.wall_sleep(0.01)
                         t = t + genpy.Duration.from_sec(0.1)
                 except Exception:
                     traceback.print_exc()
+            clock_task = asyncio.create_task(clock_thread())
 
             try:
-                yield nh.set_param("/use_sim_time", True)
+                await nh.set_param("/use_sim_time", True)
 
-                nh2 = yield NodeHandle.from_argv(
+                nh2 = await NodeHandle.from_argv(
                     "node2",
                     argv=[
                         "__ip:=127.0.0.1",
@@ -110,13 +115,12 @@ def call_with_nodehandle_sim_time(f):
                     anonymous=True,
                 )
                 try:
-                    defer.returnValue((yield f(nh2)))
+                    return await f(nh2)
                 finally:
-                    yield nh2.shutdown()
+                    await nh2.shutdown()
             finally:
-                clock_thread.cancel()
-                clock_thread.addErrback(lambda fail: fail.trap(defer.CancelledError))
+                clock_task.cancel()
         finally:
-            yield nh.shutdown()
+            await nh.shutdown()
     finally:
-        yield rosmaster.stop()
+        await rosmaster.stop()

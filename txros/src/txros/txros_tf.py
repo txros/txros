@@ -1,22 +1,25 @@
 from __future__ import annotations
-import math
-import numpy
+
+import asyncio
 import bisect
 import itertools
-
-from twisted.internet import defer
+import math
+from typing import TYPE_CHECKING, List
 
 import genpy
-from geometry_msgs.msg import TransformStamped, Pose
+import numpy
+from geometry_msgs.msg import Pose
 from geometry_msgs.msg import Transform as TransformMsg
-from tf2_msgs.msg import TFMessage
+from geometry_msgs.msg import TransformStamped
 from tf import transformations  # XXX
-from typing import List, TYPE_CHECKING
+from tf2_msgs.msg import TFMessage
+from twisted.internet import defer
 
 from . import util
 
 if TYPE_CHECKING:
     from .nodehandle import NodeHandle
+    from .subscriber import Subscriber
 
 
 def _sinc(x):
@@ -169,13 +172,21 @@ class Transform:
         return transformations.quaternion_multiply(self._q, quaternion)
 
 
-def _make_absolute(frame_id):
+def _make_absolute(frame_id: str) -> str:
     if not frame_id.startswith("/"):
         return "/" + frame_id
     return frame_id
 
 
 class TransformListener:
+
+    _node_handle: NodeHandle
+    _history_length: genpy.Duration
+    _id_count: itertools.count
+    _tfs: dict[str, list[genpy.Time | str | Transform]]
+    _futs: dict[str, dict[int, asyncio.Future]]
+    _tf_subscriber: Subscriber
+
     def __init__(
         self,
         node_handle: NodeHandle,
@@ -187,21 +198,24 @@ class TransformListener:
         self._id_counter = itertools.count()
 
         self._tfs = {}  # child_frame_id -> sorted list of (time, frame_id, Transform)
-        self._dfs = (
-            {}
-        )  # child_frame_id -> dict of deferreds to call when new tf is received
+        self._futs: dict[
+            str, dict[int, asyncio.Future]
+        ] = {}  # child_frame_id -> dict of futures to call when new tf is received
 
         self._tf_subscriber = self._node_handle.subscribe(
             "/tf", TFMessage, self._got_tfs
         )
 
-    def shutdown(self) -> None:
+    async def setup(self):
+        await self._tf_subscriber.setup()
+
+    async def shutdown(self) -> None:
         """
         Shuts the transform listener down.
         """
-        self._tf_subscriber.shutdown()
+        await self._tf_subscriber.shutdown()
 
-    def _got_tfs(self, msg):
+    def _got_tfs(self, msg: TFMessage):
         for transform in msg.transforms:
             frame_id = _make_absolute(transform.header.frame_id)
             child_frame_id = _make_absolute(transform.child_frame_id)
@@ -209,7 +223,6 @@ class TransformListener:
             l = self._tfs.setdefault(child_frame_id, [])
 
             if l and transform.header.stamp < l[-1][0]:
-                print(child_frame_id, "frame's time decreased!")
                 del l[:]
 
             l.append(
@@ -229,24 +242,20 @@ class TransformListener:
         for transform in msg.transforms:
             frame_id = _make_absolute(transform.header.frame_id)
 
-            dfs = self._dfs.pop(frame_id, {})
-            for df in dfs.values():
-                df.callback(None)
+            futs = self._futs.pop(frame_id, {})
+            for fut in futs.values():
+                fut.set_result(None)
 
-    def _wait_for_new(self, child_frame_id):
+    def _wait_for_new(self, child_frame_id) -> tuple[asyncio.Future, int]:
         id_ = next(self._id_counter)
 
-        def cancel(df_):
-            self._dfs[child_frame_id].pop(id_)
-            if not self._dfs[child_frame_id]:
-                self._dfs.pop(child_frame_id)
+        fut = asyncio.Future()
+        self._futs.setdefault(child_frame_id, {})[id_] = fut
+        return fut, id_
 
-        df = defer.Deferred(cancel)
-        self._dfs.setdefault(child_frame_id, {})[id_] = df
-        return df
-
-    @util.cancellableInlineCallbacks
-    def get_transform(self, to_frame, from_frame, time=None):
+    async def get_transform(
+        self, to_frame: str, from_frame: str, time: genpy.Time | None = None
+    ):
         to_frame = _make_absolute(to_frame)
         from_frame = _make_absolute(from_frame)
         assert time is None or isinstance(time, genpy.Time)
@@ -271,9 +280,7 @@ class TransformListener:
                     to_tfs[new_to_pos] = t * to_tfs[to_pos]
 
                     if new_to_pos in from_tfs:
-                        defer.returnValue(
-                            to_tfs[new_to_pos].inverse() * from_tfs[new_to_pos]
-                        )
+                        return to_tfs[new_to_pos].inverse() * from_tfs[new_to_pos]
 
                     to_pos = new_to_pos
 
@@ -291,27 +298,32 @@ class TransformListener:
                     from_tfs[new_from_pos] = t * from_tfs[from_pos]
 
                     if new_from_pos in to_tfs:
-                        defer.returnValue(
-                            to_tfs[new_from_pos].inverse() * from_tfs[new_from_pos]
-                        )
+                        return to_tfs[new_from_pos].inverse() * from_tfs[new_from_pos]
 
                     from_pos = new_from_pos
 
-            lst = [
-                self._wait_for_new(to_pos),
-                self._wait_for_new(from_pos),
-            ]
+            to_pos_fut, to_pos_id = self._wait_for_new(to_pos)
+            from_pos_fut, from_pos_id = self._wait_for_new(from_pos)
+            lst = [to_pos_fut, from_pos_fut]
             try:
-                yield defer.DeferredList(
-                    lst, fireOnOneCallback=True, fireOnOneErrback=True
-                )
+                await asyncio.wait(lst, return_when=asyncio.FIRST_COMPLETED)
             finally:
-                for df in lst:
-                    df.cancel()
-                for df in lst:
-                    df.addErrback(lambda fail: fail.trap(defer.CancelledError))
+                for fut in lst:
+                    fut.cancel()
+                if to_pos in self._futs:
+                    self._futs[to_pos].pop(to_pos_id)
+                    if not self._futs[to_pos]:
+                        self._futs.pop(to_pos)
+                if from_pos in self._futs:
+                    self._futs[from_pos].pop(from_pos_id)
+                    if not self._futs[from_pos]:
+                        self._futs.pop(from_pos)
 
-    def _interpolate(self, sorted_list, time):
+    def _interpolate(
+        self,
+        sorted_list: list[tuple[genpy.Time, str, Transform]],
+        time: genpy.Time | None,
+    ) -> tuple[str, genpy.Time]:
         if time is None:
             if sorted_list:
                 return sorted_list[-1][1], sorted_list[-1][2]
@@ -354,6 +366,7 @@ class TransformBroadcaster:
     """
     Broadasts transforms onto a topic.
     """
+
     def __init__(self, node_handle: NodeHandle):
         """
         Args:
@@ -362,6 +375,9 @@ class TransformBroadcaster:
         """
         self._node_handle = node_handle
         self._tf_publisher = self._node_handle.advertise("/tf", TFMessage)
+
+    async def setup(self) -> None:
+        await self._tf_publisher.setup()
 
     def send_transform(self, transform: TransformStamped):
         """

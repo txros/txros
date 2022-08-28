@@ -1,44 +1,42 @@
+import asyncio
+import time
+
 from twisted.internet import defer, reactor
-from twisted.trial import unittest
+import unittest
 
 from txros import util
 
 
-class Test(unittest.TestCase):
-    @defer.inlineCallbacks
-    def test_wall_sleep(self):
-        t1 = reactor.seconds()
-        yield util.wall_sleep(2.0)
-        t2 = reactor.seconds()
+class Test(unittest.IsolatedAsyncioTestCase):
+    async def test_wall_sleep(self):
+        t1 = time.time()
+        await util.wall_sleep(2.0)
+        t2 = time.time()
 
         assert 1 <= t2 - t1 <= 3
 
-    @defer.inlineCallbacks
-    def test_wrap_timeout1(self):
+    async def test_wrap_timeout1(self):
         try:
 
-            @util.cancellableInlineCallbacks
-            def f():
-                yield util.wall_sleep(1)
-                defer.returnValue("retval")
+            async def f():
+                await util.wall_sleep(1)
+                return "retval"
 
-            yield util.wrap_timeout(f(), 3)
-        except util.TimeoutError:
+            await util.wrap_timeout(f(), 3)
+        except asyncio.TimeoutError:
             assert False
         else:
             assert True
 
-    @defer.inlineCallbacks
-    def test_wrap_timeout2(self):
+    async def test_wrap_timeout2(self):
         try:
 
-            @util.cancellableInlineCallbacks
-            def f():
-                yield util.wall_sleep(3)
-                defer.returnValue("retval")
+            async def f():
+                await util.wall_sleep(3)
+                return "retval"
 
-            yield util.wrap_timeout(f(), 1)
-        except util.TimeoutError:
+            await util.wrap_timeout(f(), 1)
+        except asyncio.TimeoutError:
             pass
         else:
             assert False

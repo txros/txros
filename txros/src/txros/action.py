@@ -1,20 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import random
 import traceback
-from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Protocol
 
 import genpy
 from actionlib_msgs.msg import GoalID, GoalStatus, GoalStatusArray
 from std_msgs.msg import Header
-from twisted.internet import defer
 
 from . import util
 
 if TYPE_CHECKING:
     from .nodehandle import NodeHandle
 
-GoalStatusRange = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 class ActionMessage(Protocol):
     action_goal: genpy.Message
@@ -33,7 +32,7 @@ class GoalManager:
     _action_client: ActionClient
     _goal: Goal
     _goal_id: str
-    _feedback_dfs: list[defer.Deferred]
+    _feedback_futs: list[asyncio.Future]
 
     def __init__(self, action_client: ActionClient, goal: Goal):
         """
@@ -45,24 +44,24 @@ class GoalManager:
         self._action_client = action_client
         self._goal = goal
 
-        self._goal_id = "%016x" % (random.randrange(2**64),)
+        self._goal_id = "{:016x}".format(random.randrange(2**64))
 
         assert self._goal_id not in self._action_client._goal_managers
         self._action_client._goal_managers[self._goal_id] = self
 
-        self._feedback_dfs = []
-        self._result_df = defer.Deferred()
+        self._feedback_futs = []
+        self._result_fut = asyncio.Future()
 
-        self._think_thread = self._think()
+        self._think_thread = asyncio.create_task(self._think())
         import rospy
+
         rospy.logerr(f"A goal manager has been made! {self.__dict__}")
 
-    @util.cancellableInlineCallbacks
-    def _think(self):
+    async def _think(self) -> None:
         try:
             now = self._action_client._node_handle.get_time()
 
-            yield self._action_client.wait_for_server()
+            await self._action_client.wait_for_server()
 
             self._action_client._goal_pub.publish(
                 self._action_client._goal_type(
@@ -90,32 +89,32 @@ class GoalManager:
 
         self.forget()
 
-        self._result_df.callback(result)
+        self._result_fut.set_result(result)
 
     def _feedback_callback(self, status, feedback):
         # XXX update state
         del status
 
-        old, self._feedback_dfs = self._feedback_dfs, []
+        old, self._feedback_futs = self._feedback_futs, []
         for df in old:
-            df.callback(feedback)
+            df.set_result(feedback)
 
-    def get_result(self) -> Any:
+    def get_result(self) -> asyncio.Future:
         """
         Gets the result of the goal from the manager.
 
         Returns:
             Any: ???
         """
-        return util.branch_deferred(self._result_df, lambda df_: self.cancel())
+        return self._result_fut
 
-    def get_feedback(self) -> defer.Deferred:
+    def get_feedback(self) -> asyncio.Future:
         """
         Gets the feedback from all feedback Deferred objects.
         """
-        df = defer.Deferred()
-        self._feedback_dfs.append(df)
-        return df
+        fut = asyncio.Future()
+        self._feedback_futs.append(fut)
+        return fut
 
     def cancel(self) -> None:
         """
@@ -160,14 +159,14 @@ class Goal:
         status_text (:class:`str`): A string representing the status of the goal
     """
 
-    goal: GoalStatus | None # This needs to be defined
-    status: GoalStatusRange
+    goal: GoalStatus | None  # This needs to be defined
+    status: int
     status_text: str
 
     def __init__(
         self,
         goal_msg: GoalStatus,
-        status: GoalStatusRange = GoalStatus.PENDING,
+        status: int = GoalStatus.PENDING,
         status_text: str = "",
     ):
         if goal_msg.goal_id.id == "":
@@ -176,6 +175,7 @@ class Goal:
         self.status = status
         self.status_text = status_text
         import rospy
+
         rospy.logerr(f"A goal has been made: {self.__dict__}")
 
     def __eq__(self, rhs: Goal):
@@ -217,7 +217,7 @@ class SimpleActionServer:
         >>> serv.start()
         >>> # To accept a goal
         >>> while not self.is_new_goal_available():  # Loop until there is a new goal
-        ...     yield nh.sleep(0.1)
+        ...     await nh.sleep(0.1)
         >>> goal = serv.accept_new_goal()
         >>> # To publish feedback
         >>> serv.publish_feedback(ShapeFeedback())
@@ -234,13 +234,16 @@ class SimpleActionServer:
     # - implement optional callbacks for new goals
     # - ensure headers are correct for each message
 
+    goal: Goal | None
+    next_goal: Goal | None
+
     def __init__(
         self,
         node_handle: NodeHandle,
         name: str,
         action_type: ActionMessage,
-        goal_cb: Callable = None,
-        preempt_cb: Callable = None,
+        goal_cb: Callable | None = None,
+        preempt_cb: Callable | None = None,
     ):
         self.started = False
         self._node_handle = node_handle
@@ -279,7 +282,7 @@ class SimpleActionServer:
             self._name + "/cancel", GoalID, self._cancel_cb
         )
 
-    def register_goal_callback(self, func: Optional[Callable]) -> None:
+    def register_goal_callback(self, func: Callable | None) -> None:
         self.goal_cb = func
 
     def _process_goal_callback(self):
@@ -290,7 +293,7 @@ class SimpleActionServer:
         if self.preempt_cb:
             self.preempt_cb()
 
-    def register_preempt_callback(self, func: Optional[Callable]) -> None:
+    def register_preempt_callback(self, func: Callable | None) -> None:
         self.preempt_cb = func
 
     def start(self) -> None:
@@ -298,7 +301,7 @@ class SimpleActionServer:
         Starts the status loop for the server.
         """
         self.started = True
-        self._status_loop_defered = self._status_loop()
+        self._status_loop_future = asyncio.create_task(self._status_loop())
 
     def stop(self) -> None:
         """
@@ -345,7 +348,7 @@ class SimpleActionServer:
         Returns:
             bool
         """
-        return (self.next_goal and self.goal) or self.is_cancel_requested()
+        return bool(self.goal) if self.next_goal else self.is_cancel_requested()
 
     def is_cancel_requested(self) -> bool:
         """
@@ -369,7 +372,7 @@ class SimpleActionServer:
         self,
         status: int = GoalStatus.SUCCEEDED,
         text: str = "",
-        result: Optional[genpy.Message] = None,
+        result: genpy.Message | None = None,
     ) -> None:
         if not self.started:
             print("SimpleActionServer: attempted to set_succeeded before starting")
@@ -388,7 +391,7 @@ class SimpleActionServer:
         self.goal = None
 
     def set_succeeded(
-        self, result: Optional[genpy.Message] = None, text: str = ""
+        self, result: genpy.Message | None = None, text: str = ""
     ) -> None:
         """
         Sets the status of the current goal to be succeeded.
@@ -399,9 +402,7 @@ class SimpleActionServer:
         """
         self._set_result(status=GoalStatus.SUCCEEDED, text=text, result=result)
 
-    def set_aborted(
-        self, result: Optional[genpy.Message] = None, text: str = ""
-    ) -> None:
+    def set_aborted(self, result: genpy.Message | None = None, text: str = "") -> None:
         """
         Sets the status of the current goal to aborted.
 
@@ -412,7 +413,7 @@ class SimpleActionServer:
         self._set_result(status=GoalStatus.ABORTED, text=text, result=result)
 
     def set_preempted(
-        self, result: Optional[genpy.Message] = None, text: str = ""
+        self, result: genpy.Message | None = None, text: str = ""
     ) -> None:
         """
         Sets the status of the current goal to preempted.
@@ -423,7 +424,7 @@ class SimpleActionServer:
         """
         self._set_result(status=GoalStatus.PREEMPTED, text=text, result=result)
 
-    def publish_feedback(self, feedback: Optional[genpy.Message] = None) -> None:
+    def publish_feedback(self, feedback: genpy.Message | None = None) -> None:
         """
         Publishes a feedback message onto the feedback topic.
 
@@ -453,11 +454,10 @@ class SimpleActionServer:
             msg.status_list.append(goal.status_msg())
         self._status_pub.publish(msg)
 
-    @util.cancellableInlineCallbacks
-    def _status_loop(self):
+    async def _status_loop(self):
         while self.started:
             self._publish_status()
-            yield self._node_handle.sleep(1.0 / self.status_frequency)
+            await self._node_handle.sleep(1.0 / self.status_frequency)
 
     def _cancel_cb(self, msg):
         cancel_current = False
@@ -488,19 +488,18 @@ class SimpleActionServer:
             self.cancel_requested = True
             self._process_preempt_callback()
 
-    @util.cancellableInlineCallbacks
-    def _goal_cb(self, msg):
+    def _goal_cb(self, msg: GoalStatus):
         if not self.started:
-            defer.returnValue(None)
+            return None
         new_goal = Goal(msg)
         if new_goal.goal is None:  # If goal field is empty, invalid goal
-            defer.returnValue(None)
+            return None
         # Throw out duplicate goals
         if (self.goal and new_goal == self.goal) or (
             self.next_goal and new_goal == self.next_goal
         ):
-            defer.returnValue(None)
-        now = yield self._node_handle.get_time()
+            return None
+        now = self._node_handle.get_time()
         if (
             new_goal.goal.goal_id.stamp == genpy.Time()
         ):  # If time is not set, replace with current time
@@ -515,7 +514,7 @@ class SimpleActionServer:
                 result_msg.status = new_goal.status_msg()
                 self._result_pub.publish(result_msg)
                 self._publish_status(goal=new_goal)
-                defer.returnValue(None)
+                return None
             else:  # New goal is later so reject current next_goal
                 self.next_goal.status = GoalStatus.REJECTED
                 self.next_goal.status_text = "Goal bumped by newer goal"
@@ -608,8 +607,7 @@ class ActionClient:
             )
         )
 
-    @util.cancellableInlineCallbacks
-    def wait_for_server(self):
+    async def wait_for_server(self):
         """
         Waits for a server connection. When at least one connection is received,
         the function terminates.
@@ -621,4 +619,4 @@ class ActionClient:
             & set(self._result_sub.get_connections())
             & set(self._feedback_sub.get_connections())
         ):
-            yield util.wall_sleep(0.1)  # XXX bad bad bad
+            await util.wall_sleep(0.1)  # XXX bad bad bad

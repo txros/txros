@@ -1,28 +1,32 @@
 from __future__ import annotations
 
+import asyncio
 import traceback
+from typing import TYPE_CHECKING, Callable, List, Optional, Type, Generic, TypeVar
 
-from twisted.web import xmlrpc
-from twisted.internet import defer, reactor, endpoints, error
-
-from . import rosxmlrpc, tcpros, util
-from typing import TYPE_CHECKING, Type, Callable, Optional, List
 import genpy
+
+from . import rosxmlrpc, tcpros, util, types
 
 if TYPE_CHECKING:
     from .nodehandle import NodeHandle
 
+M = TypeVar("M", bound = types.Message)
 
-class Subscriber:
+class Subscriber(Generic[M]):
     """
     A subscriber in the txROS suite.
     """
+
+    _message_futs: list[asyncio.Future]
+    _publisher_threads: dict[str, asyncio.Task]
+
     def __init__(
         self,
         node_handle: NodeHandle,
         name: str,
-        message_type: Type[genpy.Message],
-        callback: Callable[[genpy.Message], None] = lambda message: None,
+        message_type: type[M],
+        callback: Callable[[M], M | None] = lambda message: None,
     ):
         """
         Args:
@@ -36,68 +40,57 @@ class Subscriber:
         """
         self._node_handle = node_handle
         self._name = self._node_handle.resolve_name(name)
-        self._type = message_type
+        self.message_type = message_type
         self._callback = callback
 
         self._publisher_threads = {}
         self._last_message = None
         self._last_message_time = None
-        self._message_dfs = []
+        self._message_futs = []
         self._connections = {}
 
-        self._shutdown_finished = defer.Deferred()
-        self._think_thread = self._think()
-        self._node_handle._shutdown_callbacks.add(self.shutdown)
+        self._node_handle.shutdown_callbacks.add(self.shutdown)
 
-    @util.cancellableInlineCallbacks
-    def _think(self):
-        try:
-            assert (
-                "publisherUpdate",
+    async def setup(self) -> None:
+        """
+        Sets up the subscriber by registering the subscriber with ROS and listing
+        handlers supported by the topic.
+        """
+        assert (
+            "publisherUpdate",
+            self._name,
+        ) not in self._node_handle.xmlrpc_handlers
+        self._node_handle.xmlrpc_handlers[
+            "publisherUpdate", self._name
+        ] = self._handle_publisher_list
+        publishers = (
+            await self._node_handle.master_proxy.register_subscriber(
                 self._name,
-            ) not in self._node_handle._xmlrpc_handlers
-            self._node_handle._xmlrpc_handlers[
-                "publisherUpdate", self._name
-            ] = self._handle_publisher_list
-            try:
-                while True:
-                    try:
-                        publishers = (
-                            yield self._node_handle._master_proxy.registerSubscriber(
-                                self._name,
-                                self._type._type,
-                                self._node_handle._xmlrpc_server_uri,
-                            )
-                        )
-                    except Exception:
-                        traceback.print_exc()
-                    else:
-                        break
-                self._handle_publisher_list(publishers)
-                yield defer.Deferred()  # wait for cancellation
-            finally:
-                try:
-                    yield self._node_handle._master_proxy.unregisterSubscriber(
-                        self._name, self._node_handle._xmlrpc_server_uri
-                    )
-                except Exception:
-                    traceback.print_exc()
-                del self._node_handle._xmlrpc_handlers["publisherUpdate", self._name]
-        finally:
-            self._shutdown_finished.callback(None)
+                self.message_type._type,
+                self._node_handle.xmlrpc_server_uri,
+            )
+        )
+        self._handle_publisher_list(publishers)
 
-    def shutdown(self):
+    async def shutdown(self):
         """
         Shuts the subscriber down. All operations scheduled by the subscriber
         are immediately cancelled.
         """
-        self._node_handle._shutdown_callbacks.discard(self.shutdown)
-        self._think_thread.cancel()
-        self._think_thread.addErrback(lambda fail: fail.trap(defer.CancelledError))
-        self._handle_publisher_list([])
-        return util.branch_deferred(self._shutdown_finished)
+        try:
+            await self._node_handle.master_proxy.unregisterSubscriber(
+                self._name, self._node_handle.xmlrpc_server_uri
+            )
+        except Exception:
+            traceback.print_exc()
+        del self._node_handle.xmlrpc_handlers["publisherUpdate", self._name]
 
-    def get_last_message(self) -> Optional[genpy.Message]:
+        self._node_handle.shutdown_callbacks.discard(self.shutdown)
+        for _, task in self._publisher_threads.items():
+            task.cancel()
+        self._handle_publisher_list([])
+
+    def get_last_message(self) -> M | None:
         """
         Gets the last received message. This may be ``None`` if no message has been
         received.
@@ -107,7 +100,7 @@ class Subscriber:
         """
         return self._last_message
 
-    def get_last_message_time(self) -> Optional[genpy.Time]:
+    def get_last_message_time(self) -> genpy.Time | None:
         """
         Gets the time associated with the last received message. May be ``None`` if
         no message has been received yet.
@@ -117,18 +110,18 @@ class Subscriber:
         """
         return self._last_message_time
 
-    def get_next_message(self) -> defer.Deferred:
+    def get_next_message(self) -> asyncio.Future[M]:
         """
         Returns a deferred which will contain the next message.
 
         Returns:
             Deferred: Deferred object containing the next message.
         """
-        res = defer.Deferred()
-        self._message_dfs.append(res)
+        res = asyncio.Future()
+        self._message_futs.append(res)
         return res
 
-    def get_connections(self) -> List[Optional[str]]:
+    def get_connections(self) -> list[str | None]:
         """
         Returns the ``callerid`` of each connected client. If a connection does
         not provide an ID, then the value may be None.
@@ -138,35 +131,40 @@ class Subscriber:
         """
         return list(self._connections.values())
 
-    @util.cancellableInlineCallbacks
-    def _publisher_thread(self, url):
+    async def _publisher_thread(self, url: str) -> None:
         while True:
             try:
-                proxy = rosxmlrpc.Proxy(xmlrpc.Proxy(url.encode()), self._node_handle._name)
-                value = yield proxy.requestTopic(self._name, [["TCPROS"]])
+                proxy = rosxmlrpc.ROSMasterProxy(
+                    rosxmlrpc.AsyncServerProxy(url, self._node_handle._aiohttp_session),
+                    self._node_handle._name,
+                )
+                value = await proxy.request_topic(self._name, [["TCPROS"]])
 
-                protocol, host, port = value
-                conn = yield endpoints.TCP4ClientEndpoint(reactor, host, port).connect(
-                    util.AutoServerFactory(lambda addr: tcpros.Protocol())
+                _, host, port = value
+                assert isinstance(host, str)
+                assert isinstance(port, int)
+                reader, writer = await asyncio.open_connection(
+                    host, port
                 )
                 try:
-                    conn.sendString(
+                    tcpros.send_string(
                         tcpros.serialize_dict(
                             dict(
-                                message_definition=self._type._full_text,
+                                message_definition=self.message_type._full_text,
                                 callerid=self._node_handle._name,
                                 topic=self._name,
-                                md5sum=self._type._md5sum,
-                                type=self._type._type,
+                                md5sum=self.message_type._md5sum,
+                                type=self.message_type._type,
                             )
-                        )
+                        ),
+                        writer
                     )
-                    header = tcpros.deserialize_dict((yield conn.receiveString()))
-                    self._connections[conn] = header.get("callerid", None)
+                    header = tcpros.deserialize_dict((await tcpros.receive_string(reader)))
+                    self._connections[writer] = header.get("callerid", None)
                     try:
                         while True:
-                            data = yield conn.receiveString()
-                            msg = self._type().deserialize(data)
+                            data = await tcpros.receive_string(reader)
+                            msg = self.message_type().deserialize(data)
                             try:
                                 self._callback(msg)
                             except:
@@ -175,39 +173,31 @@ class Subscriber:
                             self._last_message = msg
                             self._last_message_time = self._node_handle.get_time()
 
-                            old, self._message_dfs = self._message_dfs, []
-                            for df in old:
-                                df.callback(msg)
+                            old, self._message_futs = self._message_futs, []
+                            for fut in old:
+                                fut.set_result(msg)
                     finally:
-                        del self._connections[conn]
+                        del self._connections[writer]
                 finally:
-                    conn.transport.loseConnection()
-            except (
-                error.ConnectionDone,
-                error.ConnectionLost,
-                error.ConnectionRefusedError,
-            ):
+                    writer.close()
+            except (ConnectionRefusedError, BrokenPipeError, ConnectionResetError):
                 pass
             except Exception:
                 traceback.print_exc()
 
-            yield util.wall_sleep(
+            await util.wall_sleep(
                 1
             )  # pause so that we don't repeatedly reconnect immediately on failure
 
-    def _handle_publisher_list(self, publishers):
-        new = dict(
-            (
-                k,
-                self._publisher_threads.pop(k)
-                if k in self._publisher_threads
-                else self._publisher_thread(k),
-            )
+    def _handle_publisher_list(self, publishers: list[str]) -> tuple[int, str, bool]:
+        new = {
+            k: self._publisher_threads.pop(k)
+            if k in self._publisher_threads
+            else asyncio.create_task(self._publisher_thread(k))
             for k in publishers
-        )
+        }
         for k, v in self._publisher_threads.items():
             v.cancel()
-            v.addErrback(lambda fail: fail.trap(defer.CancelledError))
         self._publisher_threads = new
 
         return 1, "success", False

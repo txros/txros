@@ -1,21 +1,23 @@
 from __future__ import annotations
 
+import asyncio
 import traceback
 from io import BytesIO
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Awaitable, TypeVar, Generic
 import genpy
 
-from twisted.internet import defer, error
-
-from . import util, tcpros
+from . import util, tcpros, types
 
 if TYPE_CHECKING:
     from .nodehandle import NodeHandle
     from .serviceclient import ServiceType
     from .tcpros import Protocol
 
+Request = TypeVar('Request', bound = types.Message)
+Reply = TypeVar('Reply', bound = types.Message)
 
-class Service:
+
+class Service(Generic[Request, Reply]):
     """
     A service in the txROS suite. Handles incoming requests through a user-supplied
     callback function, which is expected to return a response message.
@@ -24,8 +26,8 @@ class Service:
         self,
         node_handle: NodeHandle,
         name: str,
-        service_type: ServiceType,
-        callback: Callable[[genpy.Message], defer.Deferred],
+        service_type: types.ServiceMessage[Request, Reply],
+        callback: Callable[[Request], Awaitable[Reply]],
     ):
         """
         Args:
@@ -45,57 +47,40 @@ class Service:
         self._type = service_type
         self._callback = callback
 
-        self._shutdown_finished = defer.Deferred()
-        self._think_thread = self._think()
-        self._node_handle._shutdown_callbacks.add(self.shutdown)
+        self._node_handle.shutdown_callbacks.add(self.shutdown)
 
-    @util.cancellableInlineCallbacks
-    def _think(self):
-        try:
-            assert ("service", self._name) not in self._node_handle._tcpros_handlers
-            self._node_handle._tcpros_handlers[
-                "service", self._name
-            ] = self._handle_tcpros_conn
-            try:
-                while True:
-                    try:
-                        yield self._node_handle._master_proxy.registerService(
-                            self._name,
-                            self._node_handle._tcpros_server_uri,
-                            self._node_handle._xmlrpc_server_uri,
-                        )
-                    except Exception:
-                        traceback.print_exc()
-                    else:
-                        break
-                yield defer.Deferred()  # wait for cancellation
-            finally:
-                try:
-                    yield self._node_handle._master_proxy.unregisterService(
-                        self._name, self._node_handle._tcpros_server_uri
-                    )
-                except Exception:
-                    traceback.print_exc()
-                del self._node_handle._tcpros_handlers["service", self._name]
-        finally:
-            self._shutdown_finished.callback(None)
+    async def setup(self) -> None:
+        assert ("service", self._name) not in self._node_handle.tcpros_handlers
+        self._node_handle.tcpros_handlers[
+            "service", self._name
+        ] = self._handle_tcpros_conn
+        await self._node_handle.master_proxy.register_service(
+            self._name,
+            self._node_handle._tcpros_server_uri,
+            self._node_handle.xmlrpc_server_uri,
+        )
+        print(f"Service {self._name} is now accepting requests...")
 
-    def shutdown(self) -> None:
+    async def shutdown(self) -> None:
         """
         Shuts the service down. Cancels all operations currently scheduled to be
         completed by the service.
         """
-        self._node_handle._shutdown_callbacks.discard(self.shutdown)
-        self._think_thread.cancel()
-        self._think_thread.addErrback(lambda fail: fail.trap(defer.CancelledError))
-        return util.branch_deferred(self._shutdown_finished)
+        try:
+            await self._node_handle.master_proxy.unregister_service(
+                self._name, self._node_handle._tcpros_server_uri
+            )
+        except Exception:
+            traceback.print_exc()
+        del self._node_handle.tcpros_handlers["service", self._name]
 
-    @util.cancellableInlineCallbacks
-    def _handle_tcpros_conn(self, _, conn: Protocol):
+        self._node_handle.shutdown_callbacks.discard(self.shutdown)
+
+    async def _handle_tcpros_conn(self, _, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         try:
             # check headers
 
-            conn.sendString(
+            tcpros.send_string(
                 tcpros.serialize_dict(
                     dict(
                         callerid=self._node_handle._name,
@@ -104,24 +89,26 @@ class Service:
                         request_type=self._type._request_class._type,
                         response_type=self._type._response_class._type,
                     )
-                )
+                ),
+                writer
             )
 
             while True:
-                string = yield conn.receiveString()
+                string = await tcpros.receive_string(reader)
                 req = self._type._request_class().deserialize(string)
                 try:
-                    resp = yield self._callback(req)
+                    resp = await self._callback(req)
                 except Exception as e:
                     traceback.print_exc()
-                    conn.sendByte(chr(0).encode())
-                    conn.sendString(str(e).encode())
+                    tcpros.send_byte(chr(0).encode(), writer)
+                    tcpros.send_string(str(e).encode(), writer)
                 else:
-                    conn.sendByte(chr(1).encode())
+                    tcpros.send_byte(chr(1).encode(), writer)
                     x = BytesIO()
                     self._type._response_class.serialize(resp, x)
-                    conn.sendString(x.getvalue())
-        except (error.ConnectionDone, error.ConnectionLost):
+                    tcpros.send_string(x.getvalue(), writer)
+        except (asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError):
+            # Usually means that the client has just disconnected
             pass
         finally:
-            conn.transport.loseConnection()
+            writer.close()

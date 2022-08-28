@@ -1,8 +1,9 @@
 import traceback
 
 import numpy
+import asyncio
 from twisted.internet import defer
-from twisted.trial import unittest
+import unittest
 
 import genpy
 from geometry_msgs.msg import Transform, TransformStamped, Quaternion, Vector3
@@ -11,18 +12,16 @@ from tf import transformations
 
 from txros import txros_tf, util
 from txros.test import util as test_util
+from txros.nodehandle import NodeHandle
 
 
-class Test(unittest.TestCase):
-    @defer.inlineCallbacks
-    def test_tf(self):
-        @defer.inlineCallbacks
-        def f(nh):
+class Test(unittest.IsolatedAsyncioTestCase):
+    async def test_tf(self):
+        async def f(nh: NodeHandle):
             tf_broadcaster = txros_tf.TransformBroadcaster(nh)
+            await tf_broadcaster.setup()
 
-            @apply
-            @util.cancellableInlineCallbacks
-            def publish_thread():
+            async def publish_thread():
                 try:
                     while True:
                         t = nh.get_time()
@@ -43,20 +42,25 @@ class Test(unittest.TestCase):
                                 ),
                             )
                         )
-                        yield nh.sleep(0.1)
+                        await nh.sleep(0.1)
                 except Exception:
                     traceback.print_exc()
+
+            publish_task = asyncio.create_task(publish_thread())
 
             try:
                 tf_listener = txros_tf.TransformListener(
                     nh, history_length=genpy.Duration(1)
                 )  # short history length so that we cover history being truncated
+                await tf_listener.setup()
+                print("setup tf listener...")
 
                 try:
-                    yield tf_listener.get_transform(
+                    await tf_listener.get_transform(
                         "/parent", "/child", nh.get_time() - genpy.Duration(100)
                     )
                 except txros_tf.TooPastError:
+                    print("got toopasterror")
                     pass
                 else:
                     self.fail("expected TooPastError")
@@ -65,17 +69,16 @@ class Test(unittest.TestCase):
                 for i in range(200):
                     time = start_time + genpy.Duration.from_sec(1 + i / 100)
                     dt = 1e-3
-                    transform = yield tf_listener.get_transform(
+                    transform = await tf_listener.get_transform(
                         "/parent", "/child", time
                     )
-                    transform2 = yield tf_listener.get_transform(
+                    transform2 = await tf_listener.get_transform(
                         "/parent", "/child", time + genpy.Duration.from_sec(1e-3)
                     )
                     assert numpy.allclose(
                         (transform2 - transform) / dt, [0, 0, 0, 0, 0, 1]
                     )
             finally:
-                yield publish_thread.cancel()
-                publish_thread.addErrback(lambda fail: fail.trap(defer.CancelledError))
+                publish_task.cancel()
 
-        yield test_util.call_with_nodehandle(f)
+        await test_util.call_with_nodehandle(f)

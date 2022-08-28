@@ -1,12 +1,22 @@
+"""
+Handles all connections related to TCPROS, the transport layer for ROS messages
+and services. For a general overview of TCPROS, please see http://wiki.ros.org/ROS/TCPROS.
+
+The NodeHandle handles all connections incoming through TCPROS. Upon receiving
+a connection, the node handle reroutes the incoming call to the appropriate Publisher
+or Subscriber node, which is then able to respond.
+"""
 from __future__ import annotations
 
+import asyncio
 import struct
-from typing import List, Dict, Iterator
+from typing import TYPE_CHECKING, Iterator
 
-from twisted.internet import defer, protocol
+if TYPE_CHECKING:
+    from . import types
 
 
-def deserialize_list(s: bytes) -> List[bytes]:
+def deserialize_list(s: bytes) -> list[bytes]:
     pos = 0
     res = []
     while pos != len(s):
@@ -22,7 +32,7 @@ def serialize_list(lst: Iterator[bytes]) -> bytes:
     return b"".join(struct.pack("<I", len(x)) + x for x in lst)
 
 
-def deserialize_dict(s: bytes) -> Dict[str, str]:
+def deserialize_dict(s: bytes) -> dict[str, str]:
     res = {}
     for item in deserialize_list(s):
         key, value = item.split(b"=", 1)
@@ -31,64 +41,51 @@ def deserialize_dict(s: bytes) -> Dict[str, str]:
     return res
 
 
-def serialize_dict(s: Dict[str, str]) -> bytes:
+def serialize_dict(s: dict[str, str]) -> bytes:
     return serialize_list(f"{k}={v}".encode() for k, v in s.items())
 
 
-class Protocol(protocol.Protocol):
-    def __init__(self):
-        self._df_type = None
-        self._buf = b""
-        self._error = None
+async def receive_string(reader: asyncio.StreamReader) -> bytes:
+    (length,) = struct.unpack("<I", await reader.readexactly(4))
+    return await reader.readexactly(length)
 
-    def dataReceived(self, data: bytes):
-        self._buf += data
-        self._think()
+async def receive_byte(reader: asyncio.StreamReader) -> bytes:
+    return await reader.readexactly(1)
 
-    def connectionLost(self, reason):
-        self._error = reason
-        self._think()
+def send_string(string: bytes, writer: asyncio.StreamWriter) -> None:
+    writer.write(struct.pack("<I", len(string)) + string)
 
-    def _think(self):
-        if self._df_type is None:
-            return
-        df, type_ = self._df_type
+def send_byte(byte: bytes, writer: asyncio.StreamWriter) -> None:
+    writer.write(byte)
 
-        if self._error is not None:
-            df.callback(self._error)
-            return
 
-        if type_ == "byte":
-            if self._buf:
-                byte, self._buf = self._buf[0], self._buf[1:]
-                self._df_type = None
-                df.callback(byte)
-        elif type_ == "string":
-            if len(self._buf) >= 4:
-                (length,) = struct.unpack("<I", self._buf[:4])
-                if len(self._buf) >= 4 + length:
-                    data, self._buf = self._buf[4 : 4 + length], self._buf[4 + length :]
-                    self._df_type = None
-                    df.callback(data)
+async def callback(
+    tcpros_handlers: dict[tuple[str, str], types.TCPROSProtocol],
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+):
+    try:
+        header = deserialize_dict(await receive_string(reader))
+
+        async def default(header: dict[str, str], reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+            del header  # In the default case, we don't handle header
+            send_string(serialize_dict(dict(error="unhandled connection")), writer)
+            writer.close()
+
+        if "service" in header:
+            await tcpros_handlers.get(("service", header["service"]), default)(
+                header, reader, writer
+            )
+        elif "topic" in header:
+            await tcpros_handlers.get(("topic", header["topic"]), default)(
+                header, reader, writer
+            )
         else:
-            assert False
-
-    def _receive(self, type_) -> defer.Deferred:
-        assert self._df_type is None
-        df = defer.Deferred()
-        self._df_type = df, type_
-        self._think()
-        return df
-
-    def receiveByte(self) -> defer.Deferred:
-        return self._receive("byte")
-
-    def receiveString(self) -> defer.Deferred:
-        return self._receive("string")
-
-    def sendByte(self, byte: bytes):
-        assert len(byte) == 1
-        self.transport.write(byte)
-
-    def sendString(self, string: bytes) -> None:
-        self.transport.write(struct.pack("<I", len(string)) + string)
+            send_string(
+                serialize_dict(dict(error="no topic or service name detected")), writer
+            )
+            writer.close()
+    except (BrokenPipeError, ConnectionResetError):
+        # If these exceptions are triggered, the client likely disconnected, and
+        # there is no need to fulfill their request
+        return
