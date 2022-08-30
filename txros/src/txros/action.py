@@ -556,6 +556,15 @@ class ActionClient:
             self._name + "/feedback", self._feedback_type, self._feedback_callback
         )
 
+    async def setup(self):
+        await asyncio.gather(
+            self._goal_pub.setup(),
+            self._cancel_pub.setup(),
+            self._status_sub.setup(),
+            self._result_sub.setup(),
+            self._feedback_sub.setup(),
+        )
+
     def _status_callback(self, msg: GoalStatusArray):
         for status in msg.status_list:
             if status.goal_id.id in self._goal_managers:

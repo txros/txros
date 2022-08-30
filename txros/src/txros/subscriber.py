@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 import asyncio
 import traceback
 from typing import TYPE_CHECKING, Callable, List, Optional, Type, Generic, TypeVar
@@ -20,6 +21,7 @@ class Subscriber(Generic[M]):
 
     _message_futs: list[asyncio.Future]
     _publisher_threads: dict[str, asyncio.Task]
+    _is_running: bool
 
     def __init__(
         self,
@@ -50,6 +52,7 @@ class Subscriber(Generic[M]):
         self._connections = {}
 
         self._node_handle.shutdown_callbacks.add(self.shutdown)
+        self._is_running = False
 
     async def setup(self) -> None:
         """
@@ -71,12 +74,32 @@ class Subscriber(Generic[M]):
             )
         )
         self._handle_publisher_list(publishers)
+        self._is_running = True
+
+    def __del__(self):
+        if self._is_running:
+            warnings.simplefilter("always", ResourceWarning)
+            warnings.warn(
+                f"The '{self._name}' subscriber was never shutdown(). This may cause issues with this instance of ROS - please fix the errors and completely restart ROS.",
+                ResourceWarning
+            )
+            warnings.simplefilter("default", ResourceWarning)
+
+    def is_running(self) -> bool:
+        """
+        Returns:
+            bool: Whether the subscriber is running.
+        """
+        return self._is_running
 
     async def shutdown(self):
         """
         Shuts the subscriber down. All operations scheduled by the subscriber
         are immediately cancelled.
         """
+        if not self._is_running:
+            raise RuntimeError(f"The {self._name} subscriber is not currently running. It may have been shutdown previously or never started.")
+
         try:
             await self._node_handle.master_proxy.unregisterSubscriber(
                 self._name, self._node_handle.xmlrpc_server_uri
@@ -89,6 +112,7 @@ class Subscriber(Generic[M]):
         for _, task in self._publisher_threads.items():
             task.cancel()
         self._handle_publisher_list([])
+        self._is_running = False
 
     def get_last_message(self) -> M | None:
         """
@@ -135,7 +159,7 @@ class Subscriber(Generic[M]):
         while True:
             try:
                 proxy = rosxmlrpc.ROSMasterProxy(
-                    rosxmlrpc.AsyncServerProxy(url, self._node_handle._aiohttp_session),
+                    rosxmlrpc.AsyncServerProxy(url, self._node_handle),
                     self._node_handle._name,
                 )
                 value = await proxy.request_topic(self._name, [["TCPROS"]])

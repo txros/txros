@@ -8,10 +8,14 @@ system provided by ROS.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable, Coroutine, Iterable, Protocol, Union
+from typing import Any, Callable, Coroutine, Iterable, Protocol, Union, TYPE_CHECKING
 from xmlrpc import client
+from lxml.etree import XMLParser, fromstring, tostring
 
 import aiohttp
+
+if TYPE_CHECKING:
+    from .nodehandle import NodeHandle
 
 XMLRPCLegalType = Union[bool, int, float, str, list, tuple, dict, None]
 
@@ -43,10 +47,10 @@ class AsyncioTransport(client.Transport):
     Transport class used by :class:`AsyncServerProxy` used to implement an XMLRPC-style
     communication framework over HTTP.
     """
-
-    def __init__(self, session: aiohttp.ClientSession):
+    def __init__(self, node_handle: NodeHandle):
         super().__init__(use_datetime=False, use_builtin_types=False)
-        self.session = session
+        self.session = node_handle._aiohttp_session
+        self.node_handle = node_handle
 
     async def request(self, url: str, request_body: bytes):
         body = ""
@@ -66,7 +70,7 @@ class AsyncioTransport(client.Transport):
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            raise TxrosXMLRPCException(e) from e
+            raise XMLRPCException(e, request_body, self.node_handle) from e
 
         return self.parse_response(body)
 
@@ -78,17 +82,35 @@ class AsyncioTransport(client.Transport):
 
 
 class AsyncServerProxy(client.ServerProxy):
+    """
+    Asynchronous server proxy to a specific server URI using :class:`aiohttp.ClientSession`.
+    This class is used in conjunction with :class:`txros.ROSMasterProxy`.
+
+    Attributes:
+        transport (AsyncioTransport): The transports used to facilitate requests.
+        session (aiohttp.ClientSession): The client session used in the communication.
+        uri (str): The URI used to connect to ROS master.
+    """
     def __init__(
         self,
         uri: str,
-        session: aiohttp.ClientSession,
+        node_handle: NodeHandle,
         *,
         headers: Iterable[tuple[str, str]] | None = None,
         context: Any | None = None,
     ) -> None:
-
-        self.transport = AsyncioTransport(session)
-        self.session = session
+        """
+        Args:
+            uri (str): The URI used to connect to ROS Master. This can often be
+                obtained through ``os.environ["ROS_MASTER_URI"]``.
+            session (aiohttp.ClientSession): The asynchronous client session to use
+                for connections.
+            headers (Iterable[tuple[:class:`str`, :class:`str`]]): The specific headers
+                to use for connection.
+            context (Any | None): The context for the asynchronous session.
+        """
+        self.transport = AsyncioTransport(node_handle)
+        self.session = node_handle._aiohttp_session
         self.uri = uri
 
         if not headers:
@@ -129,7 +151,7 @@ class AsyncServerProxy(client.ServerProxy):
         return XMLRPCMethod(self.__request, name)
 
 
-class TxrosXMLRPCException(Exception):
+class XMLRPCException(Exception):
     """
     Represents an error that occurred in the XMLRPC communication. Inherits only
     from :class:`Exception`.
@@ -146,32 +168,45 @@ class TxrosXMLRPCException(Exception):
             ``str(x)``.
 
     Attributes:
-        exception (Exception): The exception caught in the error.
+        exception (:class:`Exception`): The exception caught in the error.
+        request_body (bytes): The request body of the request which caused the exception.
+        node_handle (:class:`~txros.NodeHandle`): The node handle which made the request
+            that caused the exception.
     """
 
-    def __init__(self, exception: Exception):
+    def __init__(self, exception: Exception, request_body: bytes, node_handle: NodeHandle):
         self.exception = exception
-        super().__init__()
+        self.request_body = request_body
+        self.node_handle = node_handle
+        method_name = None
+        try:
+            parser = XMLParser(resolve_entities = True)
+            root = fromstring(self.request_body)
+            method_name = root.xpath("//methodName[1]/text()")[0]
+        except:
+            # If some exception is preventing parsing, don't worry about it
+            pass
 
-    def __str__(self):
-        return (
-            f"<{self.__class__.__name__} exception={self.exception.__class__.__name__}>"
-        )
+        help_message = ""
+        if exception.__class__.__name__ == "ClientConnectorError" and method_name == "requestTopic":
+            help_message = "It appears the node may not be able to find a node publishing the topic it is attempting to listen to. This likely means that the node publishing to the topic has died. Please check the publisher to the topic for issues and restart ROS."
 
-    __repr__ = __str__
+        super().__init__(f"An error occurred in the XMLRPC communication. The '{self.node_handle._name}' node attempted to call '{method_name}' resulting in an error. For help resolving this exception, please see the txros documentation." + (f"\n\n{help_message}" if help_message else ""))
 
 
-class TxrosROSMasterException(TxrosXMLRPCException):
+class ROSMasterException(Exception):
     """
     Represents an exception that occurred when attempting to communicate with the
-    ROS Master Server. Inherits from :class:`TxrosXMLRPCException`.
+    ROS Master Server. Inherits only from :class:`Exception`.
 
     Attributes:
+        ros_message (:class:`str`): The message from ROS explaining the exception.
+        code (:class:`int`): The code from ROS associated with the exception.
     """
-
     def __init__(self, message: str, code: int):
-        self.message = message
+        self.ros_message = message
         self.code = code
+        super().__init__(f"An error was sent by ROS when communicating over XMLRPC. The code was '{self.code}' and the message was '{self.ros_message}'")
 
 
 class ROSMasterProxy:
@@ -205,12 +240,6 @@ class ROSMasterProxy:
         proxy (:class:`AsyncServerProxy`): The proxy to a general XMLRPC server.
         caller_id (:class:`str`): The caller ID making the following requests.
 
-    Raises:
-        :class:`TxrosXMLRPCException`: General error in communication. This could
-            be due to a multitude of reasons.
-        :class:`TxrosROSMasterException`: The status code returned by the ROS master
-            server was not 1, indicating that the request was not complete.
-
     .. container:: operations
 
         .. describe:: x.attr
@@ -218,12 +247,19 @@ class ROSMasterProxy:
             Calls the master server with the attribute name representing the name
             of the method to call. The value is returned in a Deferred object.
             If the status code is not 1, then :class:`txros.Error` is raised.
+
+            Raises:
+                :class:`XMLRPCException`: General error in communication. This could
+                    be due to a multitude of reasons.
+                :class:`ROSMasterException`: The status code returned by the ROS master
+                    server was not 1, indicating that the request was not complete.
+
     """
 
     def __init__(self, proxy: AsyncServerProxy, caller_id: str):
         """
         Args:
-            proxy (xmlrpc.Proxy): The proxy representing an XMLRPC connection to the ROS
+            proxy (txros.AsyncServerProxy): The proxy representing an XMLRPC connection to the ROS
                 master server.
             caller_id (str): The ID of the caller in the proxy.
         """
@@ -237,7 +273,7 @@ class ROSMasterProxy:
             )(self._caller_id, *args)
             if status_code == 1:  # SUCCESS
                 return value
-            raise TxrosROSMasterException(status_code, status_message)
+            raise ROSMasterException(status_message, status_code)
 
         return remote_caller
 
@@ -282,16 +318,3 @@ class ROSMasterProxy:
         self, topic: str, caller_api: str
     ) -> Coroutine[Any, Any, list[str]]:
         return self.make_remote_caller("unregisterPublisher")(topic, caller_api)
-
-
-async def test():
-    import os
-
-    session = aiohttp.ClientSession()
-    proxy = AsyncServerProxy(os.environ["ROS_MASTER_URI"], session)
-    master = ROSMasterProxy(proxy, "")
-    print(await master.requestTopic("/always_true"))
-
-
-if __name__ == "__main__":
-    asyncio.run(test())

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 import asyncio
 import traceback
 from io import BytesIO
@@ -33,6 +34,7 @@ class Publisher(Generic[M]):
     _connections: dict[asyncio.StreamWriter, str]
     _name: str
     _node_handle: NodeHandle
+    _is_running: bool
 
     def __init__(
         self,
@@ -50,6 +52,7 @@ class Publisher(Generic[M]):
         self._connections = {}
 
         self._node_handle.shutdown_callbacks.add(self.shutdown)
+        self._is_running = False
 
     async def setup(self) -> None:
         """
@@ -78,11 +81,24 @@ class Publisher(Generic[M]):
             self._node_handle.xmlrpc_server_uri,
         )
         print(f"Publisher {self._name} is now registered.")
+        self._is_running = True
+
+    def __del__(self):
+        if self._is_running:
+            warnings.simplefilter("always", ResourceWarning)
+            warnings.warn(
+                f"The '{self._name}' publisher was never shutdown(). This may cause issues with this instance of ROS - please fix the errors and completely restart ROS.",
+                ResourceWarning,
+            )
+            warnings.simplefilter("default", ResourceWarning)
 
     async def shutdown(self):
         """
         Shuts the publisher down. All operations scheduled by the publisher are cancelled.
         """
+        if not self._is_running:
+            raise RuntimeError(f"The {self._name} publisher is not running. It may have been shutdown previously or never started.")
+
         try:
             await self._node_handle.master_proxy.unregister_publisher(
                 self._name, self._node_handle.xmlrpc_server_uri
@@ -93,6 +109,7 @@ class Publisher(Generic[M]):
         del self._node_handle.xmlrpc_handlers["requestTopic", self._name]
 
         self._node_handle.shutdown_callbacks.discard(self.shutdown)
+        self._is_running = False
 
     def _handle_requestTopic(self, protocols) -> tuple[int, str, list[str | int]]:
         del protocols  # This method is protocol-agnostic

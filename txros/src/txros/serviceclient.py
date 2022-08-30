@@ -123,7 +123,7 @@ class ServiceClient(Generic[S]):
         while True:
             try:
                 await self._node_handle.master_proxy.lookup_service(self._name)
-            except rosxmlrpc.TxrosXMLRPCException:
+            except rosxmlrpc.XMLRPCException:
                 await util.wall_sleep(0.1)  # XXX bad
                 continue
             else:

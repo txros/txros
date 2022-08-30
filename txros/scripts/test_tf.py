@@ -2,24 +2,25 @@
 
 import traceback
 
+import uvloop
+import asyncio
 import genpy
 
 import txros
-from txros import util
 from txros import txros_tf
 
 
-@util.cancellableInlineCallbacks
-def main():
-    nh = yield txros.NodeHandle.from_argv("test_tf", anonymous=True)
+async def main():
+    nh = await txros.NodeHandle.from_argv("test_tf", anonymous=True)
 
     tf_listener = txros_tf.TransformListener(nh)
+    await tf_listener.setup()
 
     while True:
         try:
             time = nh.get_time() - genpy.Duration(1)
-            transform = yield tf_listener.get_transform("/parent", "/child", time)
-            transform2 = yield tf_listener.get_transform(
+            transform = await tf_listener.get_transform("/parent", "/child", time)
+            transform2 = await tf_listener.get_transform(
                 "/parent", "/child", time + genpy.Duration(0, 1000000)
             )
         except Exception:
@@ -28,7 +29,9 @@ def main():
             print(time)
             print(transform)
             print((transform2 - transform) / 1e-3)
-        yield nh.sleep(0.01)
+        await nh.sleep(0.01)
 
 
-util.launch_main(main)
+if __name__ == "__main__":
+    uvloop.install()
+    asyncio.run(main())

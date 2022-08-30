@@ -1,17 +1,17 @@
 #!/usr/bin/python3
 
+import asyncio
+import uvloop
 import random
-from twisted.internet import defer
 
 import txros
-from txros import util, action
+from txros import action
 
 from actionlib.msg import TestAction, TestGoal
 
 
-@util.cancellableInlineCallbacks
-def main():
-    nh = yield txros.NodeHandle.from_argv("action_test_node", anonymous=True)
+async def main():
+    nh = await txros.NodeHandle.from_argv("action_test_node", anonymous=True)
 
     ac = action.ActionClient(nh, "test_action", TestAction)
 
@@ -24,10 +24,8 @@ def main():
     print("sent goal")
 
     while True:
-        result, index = yield defer.DeferredList(
-            [goal_manager.get_feedback(), goal_manager.get_result()],
-            fireOnOneCallback=True,
-            fireOnOneErrback=True,
+        result, index = await asyncio.gather(
+            goal_manager.get_feedback(), goal_manager.get_result()
         )
 
         if index == 0:  # feedback
@@ -40,4 +38,6 @@ def main():
 
             break
 
-util.launch_main(main)
+if __name__ == "__main__":
+    uvloop.install()
+    asyncio.run(main())
