@@ -4,11 +4,10 @@ import warnings
 import asyncio
 import traceback
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, Generic, Type, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
+from types import TracebackType
 
-import genpy
-
-from txros import tcpros, types, util
+from txros import tcpros, types
 
 if TYPE_CHECKING:
     from .nodehandle import NodeHandle
@@ -18,17 +17,22 @@ M = TypeVar("M", bound=types.Message)
 
 class Publisher(Generic[M]):
     """
-    A Publisher in the txROS suite. Managed through a node handle.
+    A Publisher in the txROS suite. Allows for the publishing of messages onto a
+    certain ROS topic. This class should usually be made through :meth:`txros.NodeHandle.advertise`.
 
-    Args:
-        node_handle (NodeHandle): The node handle to associate with this publisher.
-            Used to communicate with the ROS master server.
-        name (str): The name of the publisher topic.
-        message_type (Type[genpy.Message]): The message type that will be published
+    Before use, the publisher must be :meth:`~.setup` and after use, it must be
+    :meth:`~.shutdown`.
+
+    .. container:: operations
+
+        .. describe:: async with x:
+
+            On entering the block, the publisher is :meth:`~.setup`; upon leaving the block,
+            the publisher is :meth:`~.shutdown`.
+
+    Attributes:
+        message_type (type[genpy.Message]): The type of message being published
             on the topic.
-        latching (bool): Enables latching on the publisher. This ensures that all
-            new connections are immediately sent the most recently sent message
-            when they connect to the publisher.
     """
 
     _connections: dict[asyncio.StreamWriter, str]
@@ -43,6 +47,17 @@ class Publisher(Generic[M]):
         message_type: type[M],
         latching: bool = False,
     ):
+        """
+        Args:
+            node_handle (NodeHandle): The node handle to associate with this publisher.
+                Used to communicate with the ROS master server.
+            name (str): The name of the publisher topic.
+            message_type (Type[genpy.Message]): The message type that will be published
+                on the topic.
+            latching (bool): Enables latching on the publisher. This ensures that all
+                new connections are immediately sent the most recently sent message
+                when they connect to the publisher.
+        """
         self._node_handle = node_handle
         self._name = self._node_handle.resolve_name(name)
         self.message_type = message_type
@@ -92,9 +107,21 @@ class Publisher(Generic[M]):
             )
             warnings.simplefilter("default", ResourceWarning)
 
+    async def __aenter__(self) -> Publisher:
+        await self.setup()
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[Exception], exc_value: Exception, traceback: TracebackType
+    ):
+        await self.shutdown()
+
     async def shutdown(self):
         """
         Shuts the publisher down. All operations scheduled by the publisher are cancelled.
+
+        Raises:
+            RuntimeError: The publisher is not running. It may need to be :meth:`~.setup`.
         """
         if not self._is_running:
             raise RuntimeError(f"The {self._name} publisher is not running. It may have been shutdown previously or never started.")
@@ -123,6 +150,15 @@ class Publisher(Generic[M]):
             ],
         )
 
+    def is_running(self) -> bool:
+        """
+        Returns:
+            bool: Whether the publisher is running. ``True`` when the publisher
+            is :meth:`~.setup` and ``False`` otherwise (including when the node
+            handle or publisher is shutdown).
+        """
+        return self._is_running
+
     async def _handle_tcpros_conn(
         self,
         headers: dict[str, str],
@@ -141,7 +177,6 @@ class Publisher(Generic[M]):
                 ),
                 writer,
             )
-            print("I just sent some data back!")
 
             if self._latching and self._last_message_data is not None:
                 tcpros.send_string(self._last_message_data, writer)
@@ -183,5 +218,8 @@ class Publisher(Generic[M]):
     def get_connections(self):
         """
         Gets connections to the publisher.
+
+        Returns:
+            list[str]: The list of nodes connected to the publisher.
         """
         return list(self._connections.values())

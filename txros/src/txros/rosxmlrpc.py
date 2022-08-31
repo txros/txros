@@ -103,8 +103,8 @@ class AsyncServerProxy(client.ServerProxy):
         Args:
             uri (str): The URI used to connect to ROS Master. This can often be
                 obtained through ``os.environ["ROS_MASTER_URI"]``.
-            session (aiohttp.ClientSession): The asynchronous client session to use
-                for connections.
+            node_handle (txros.NodeHandle): The node handle starting the asynchronous
+                proxy.
             headers (Iterable[tuple[:class:`str`, :class:`str`]]): The specific headers
                 to use for connection.
             context (Any | None): The context for the asynchronous session.

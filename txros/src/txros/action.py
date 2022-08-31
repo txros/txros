@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import warnings
 import asyncio
 import random
 import traceback
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Protocol
+from typing import TYPE_CHECKING, Callable
 
+from types import TracebackType
 import genpy
 from actionlib_msgs.msg import GoalID, GoalStatus, GoalStatusArray
 from std_msgs.msg import Header
@@ -23,7 +25,7 @@ class GoalManager:
     _action_client: ActionClient
     _goal: Goal
     _goal_id: str
-    _feedback_futs: list[asyncio.Future]
+    _feedback_futs: list[asyncio.Future[types.ActionFeedback]]
 
     def __init__(self, action_client: ActionClient, goal: Goal):
         """
@@ -44,9 +46,6 @@ class GoalManager:
         self._result_fut = asyncio.Future()
 
         self._think_thread = asyncio.create_task(self._think())
-        import rospy
-
-        rospy.logerr(f"A goal manager has been made! {self.__dict__}")
 
     async def _think(self) -> None:
         try:
@@ -76,13 +75,11 @@ class GoalManager:
     def _result_callback(self, status, result: types.ActionResult):
         del status
         # XXX update state
-        # XXX cancel feedback deferreds
-
         self.forget()
 
         self._result_fut.set_result(result)
 
-    def _feedback_callback(self, status, feedback):
+    def _feedback_callback(self, status, feedback: types.ActionFeedback):
         # XXX update state
         del status
 
@@ -99,9 +96,9 @@ class GoalManager:
         """
         return self._result_fut
 
-    def get_feedback(self) -> asyncio.Future:
+    def get_feedback(self) -> asyncio.Future[types.ActionFeedback]:
         """
-        Gets the feedback from all feedback Deferred objects.
+        Gets the feedback from all feedback :class:`asyncio.Future` objects.
         """
         fut = asyncio.Future()
         self._feedback_futs.append(fut)
@@ -138,7 +135,7 @@ class Goal:
 
     .. container:: operations
 
-        .. describe:: x = y
+        .. describe:: x == y
 
             Determines equality between two goals by comparing their ids. If
             either side is not a :class:`actionlib_msgs.msg.GoalStatus`, then
@@ -147,7 +144,7 @@ class Goal:
     Parameters:
         goal (GoalStatus): The original goal message which constructs this class
         status (uint8): An enum representing the status of
-        status_text (:class:`str`): A string representing the status of the goal
+        status_text (str): A string representing the status of the goal
     """
 
     goal: GoalStatus | None  # This needs to be defined
@@ -165,9 +162,6 @@ class Goal:
         self.goal = goal_msg
         self.status = status
         self.status_text = status_text
-        import rospy
-
-        rospy.logerr(f"A goal has been made: {self.__dict__}")
 
     def __eq__(self, rhs: Goal):
         # assert isinstance(self.goal, GoalStatus), f"Value was {type(self.goal)}: {self.goal}"
@@ -219,6 +213,13 @@ class SimpleActionServer:
         >>> serv.set_succeeded(text='Wahoo!', result=ShapeResult(apothem=1))
         >>> # or
         >>> serv.set_aborted(text='Something went wrong!')
+
+    .. container:: operations
+
+        .. describe:: async with x:
+
+            On entering the block, :meth:`~.setup` is called; upon exit, :meth:`~.shutdown`
+            is called.
     """
 
     # TODO:
@@ -272,8 +273,13 @@ class SimpleActionServer:
         self._cancel_sub = self._node_handle.subscribe(
             self._name + "/cancel", GoalID, self._cancel_cb
         )
+        self._is_running = False
 
     async def setup(self) -> None:
+        """
+        Sets up the action server. This must be called before the action server
+        can be used.
+        """
         await asyncio.gather(
             self._status_pub.setup(),
             self._result_pub.setup(),
@@ -281,8 +287,13 @@ class SimpleActionServer:
             self._goal_sub.setup(),
             self._cancel_sub.setup(),
         )
+        self._is_running = True
 
     async def shutdown(self) -> None:
+        """
+        Shuts the action server down. This must be called before the program is
+        ended.
+        """
         await asyncio.gather(
             self._status_pub.shutdown(),
             self._result_pub.shutdown(),
@@ -290,6 +301,35 @@ class SimpleActionServer:
             self._goal_sub.shutdown(),
             self._cancel_sub.shutdown(),
         )
+        self._is_running = False
+
+    def is_running(self) -> bool:
+        """
+        Returns:
+            bool: Whether the simple action server is running. Set to ``True``
+            when :meth:`~.setup` is called; set to ``False`` when :meth:`~.shutdown`
+            is called. This is independent of whether :meth:`~.start` or :meth:`~.stop`
+            is called.
+        """
+        return self._is_running
+
+    def __del__(self):
+        if self._is_running:
+            warnings.simplefilter("always", ResourceWarning)
+            warnings.warn(
+                f"The '{self._name}' action server was never shutdown(). This may cause issues with this instance of ROS - please fix the errors and completely restart ROS.",
+                ResourceWarning,
+            )
+            warnings.simplefilter("default", ResourceWarning)
+
+    async def __aenter__(self) -> SimpleActionServer:
+        await self.setup()
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[Exception], exc_value: Exception, traceback: TracebackType
+    ):
+        await self.shutdown()
 
     def register_goal_callback(self, func: Callable | None) -> None:
         self.goal_cb = func

@@ -3,7 +3,8 @@ from __future__ import annotations
 import warnings
 import asyncio
 import traceback
-from typing import TYPE_CHECKING, Callable, List, Optional, Type, Generic, TypeVar
+from typing import TYPE_CHECKING, Callable, Generic, TypeVar
+from types import TracebackType
 
 import genpy
 
@@ -16,9 +17,16 @@ M = TypeVar("M", bound = types.Message)
 
 class Subscriber(Generic[M]):
     """
-    A subscriber in the txROS suite.
-    """
+    A subscriber in the txROS suite. This class should usually be made through
+    :meth:`txros.NodeHandle.subscribe`.
 
+    .. container:: operations
+
+        .. describe:: async with x:
+
+            On entering the block, the subscriber is :meth:`~.setup`; upon leaving the block,
+            the subscriber is :meth:`~.shutdown`.
+    """
     _message_futs: list[asyncio.Future]
     _publisher_threads: dict[str, asyncio.Task]
     _is_running: bool
@@ -36,7 +44,7 @@ class Subscriber(Generic[M]):
                 ROS master server.
             name (str): The name of the topic to subscribe to.
             message_type (Type[genpy.Message]): The message class shared by the topic.
-            callback (Callable[[genpy.Message], None]): The callback to use with
+            callback (Callable[[genpy.Message], genpy.Message | None]): The callback to use with
                 the subscriber. The callback should receive an instance of the message
                 shared by the topic and return None.
         """
@@ -58,6 +66,8 @@ class Subscriber(Generic[M]):
         """
         Sets up the subscriber by registering the subscriber with ROS and listing
         handlers supported by the topic.
+
+        The subscriber must be setup before use.
         """
         assert (
             "publisherUpdate",
@@ -84,6 +94,15 @@ class Subscriber(Generic[M]):
                 ResourceWarning
             )
             warnings.simplefilter("default", ResourceWarning)
+
+    async def __aenter__(self) -> Subscriber:
+        await self.setup()
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[Exception], exc_value: Exception, traceback: TracebackType
+    ):
+        await self.shutdown()
 
     def is_running(self) -> bool:
         """
@@ -139,19 +158,21 @@ class Subscriber(Generic[M]):
         Returns a deferred which will contain the next message.
 
         Returns:
-            Deferred: Deferred object containing the next message.
+            asyncio.Future[genpy.Message]: A future which will eventually contain
+            the next message published on the topic.
         """
         res = asyncio.Future()
         self._message_futs.append(res)
         return res
 
-    def get_connections(self) -> list[str | None]:
+    def get_connections(self) -> list[str]:
         """
         Returns the ``callerid`` of each connected client. If a connection does
         not provide an ID, then the value may be None.
 
         Returns:
-            List[Optional[str]]: A list of the relevant callerids.
+            List[str]: A list of the caller IDs of all nodes connected to the
+            subscriber.
         """
         return list(self._connections.values())
 

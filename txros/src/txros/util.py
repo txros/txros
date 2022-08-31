@@ -6,15 +6,11 @@ All non-private methods can be used throughout client and application code.
 from __future__ import annotations
 
 import asyncio
-import sys
-import traceback
-import types
-from typing import Callable, Generator, TypeVar, Awaitable
+from typing import TypeVar, Awaitable
 
 import genpy
-from twisted.internet import defer, reactor, stdio
+from twisted.internet import defer, stdio
 from twisted.protocols import basic
-from twisted.python import failure
 
 T = TypeVar("T")
 
@@ -39,8 +35,8 @@ async def sleep(duration: genpy.Duration | float):
     print("txros.util.sleep is deprecated! use txros.util.wall_sleep instead.")
     return await wall_sleep(duration)
 
-# @cancellableInlineCallbacks
 def nonblocking_raw_input(prompt):
+    # We need an equivalent method for this
     class P(basic.LineOnlyReceiver):
         delimiter = "\n"
 
@@ -76,7 +72,7 @@ async def wrap_timeout(
     :meth:`txros.wrap_time_notice`.
 
     Args:
-        fut (:class:`asyncio.Future`): The future object to timeout.
+        fut (:class:`asyncio.Future` | :class:`coroutine`): The future object to timeout.
         duration (:class:`float` | genpy.Duration): The duration to timeout.
         cancel (:class:`bool`): Keyword-only argument designating whether to
             cancel the future when the task times out.

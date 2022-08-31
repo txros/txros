@@ -16,12 +16,10 @@ from typing import (
     Protocol,
     TypeVar,
     Optional,
-    overload,
     runtime_checkable,
 )
 from actionlib_msgs.msg import GoalID, GoalStatus
 
-from genpy import Message as GenpyMessage
 from std_msgs.msg import Header
 
 TCPROSHeader = Dict[str, str]
@@ -72,7 +70,7 @@ class HasGoal(Protocol[Goal]):
     goal: Goal
 
 
-class ActionGoal(HasGoal[Goal], MessageWithHeader, Protocol, metaclass=ABCMeta):
+class ActionGoal(HasGoal[Goal], Message, Protocol, metaclass=ABCMeta):
     goal_id: GoalID
     goal: Goal
 
@@ -90,7 +88,7 @@ class HasResult(Protocol[Result]):
 
 
 @runtime_checkable
-class ActionResult(HasResult[Result], MessageWithHeader, Protocol, metaclass=ABCMeta):
+class ActionResult(HasResult[Result], Message, Protocol, metaclass=ABCMeta):
     status: GoalStatus
 
 
@@ -99,7 +97,7 @@ class HasFeedback(Protocol[Feedback]):
 
 
 @runtime_checkable
-class ActionFeedback(HasFeedback[Feedback], MessageWithHeader, Protocol, metaclass=ABCMeta):
+class ActionFeedback(HasFeedback[Feedback], Message, Protocol, metaclass=ABCMeta):
     status: GoalStatus
 
 
@@ -111,6 +109,6 @@ class Action(Protocol[Goal, Feedback, Result]):
 
 @runtime_checkable
 class ActionMessage(MessageWithHeader, Protocol):
-    action_goal: MessageWithHeader
-    action_result: MessageWithHeader
-    action_feedback: MessageWithHeader
+    action_goal: Message
+    action_result: Message
+    action_feedback: Message

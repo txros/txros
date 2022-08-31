@@ -4,14 +4,12 @@ import asyncio
 import traceback
 from io import BytesIO
 from typing import TYPE_CHECKING, Callable, Awaitable, TypeVar, Generic
-import genpy
+from types import TracebackType
 
-from . import util, tcpros, types
+from . import tcpros, types
 
 if TYPE_CHECKING:
     from .nodehandle import NodeHandle
-    from .serviceclient import ServiceType
-    from .tcpros import Protocol
 
 Request = TypeVar('Request', bound = types.Message)
 Reply = TypeVar('Reply', bound = types.Message)
@@ -21,6 +19,13 @@ class Service(Generic[Request, Reply]):
     """
     A service in the txROS suite. Handles incoming requests through a user-supplied
     callback function, which is expected to return a response message.
+
+    .. container:: operations
+
+        .. describe:: async with x:
+
+            On entering the block, the publisher is :meth:`~.setup`; upon leaving the block,
+            the publisher is :meth:`~.shutdown`.
     """
     def __init__(
         self,
@@ -50,6 +55,11 @@ class Service(Generic[Request, Reply]):
         self._node_handle.shutdown_callbacks.add(self.shutdown)
 
     async def setup(self) -> None:
+        """
+        Sets up the service to be able to receive incoming connections.
+
+        This must be called before the service can be used.
+        """
         assert ("service", self._name) not in self._node_handle.tcpros_handlers
         self._node_handle.tcpros_handlers[
             "service", self._name
@@ -59,7 +69,15 @@ class Service(Generic[Request, Reply]):
             self._node_handle._tcpros_server_uri,
             self._node_handle.xmlrpc_server_uri,
         )
-        print(f"Service {self._name} is now accepting requests...")
+
+    async def __aenter__(self) -> Service:
+        await self.setup()
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[Exception], exc_value: Exception, traceback: TracebackType
+    ):
+        await self.shutdown()
 
     async def shutdown(self) -> None:
         """
