@@ -115,9 +115,18 @@ class Subscriber(Generic[M]):
         """
         Shuts the subscriber down. All operations scheduled by the subscriber
         are immediately cancelled.
+
+        Raises:
+            ResourceWarning: The subscriber is already not running.
         """
         if not self._is_running:
-            raise RuntimeError(f"The {self._name} subscriber is not currently running. It may have been shutdown previously or never started.")
+            warnings.simplefilter("always", ResourceWarning)
+            warnings.warn(
+                f"The {self._name} subscriber is not currently running. It may have been shutdown previously or never started.",
+                ResourceWarning
+            )
+            warnings.simplefilter("default", ResourceWarning)
+            return
 
         try:
             await self._node_handle.master_proxy.unregisterSubscriber(

@@ -121,10 +121,16 @@ class Publisher(Generic[M]):
         Shuts the publisher down. All operations scheduled by the publisher are cancelled.
 
         Raises:
-            RuntimeError: The publisher is not running. It may need to be :meth:`~.setup`.
+            ResourceWarning: The publisher is not running. It may need to be :meth:`~.setup`.
         """
         if not self._is_running:
-            raise RuntimeError(f"The {self._name} publisher is not running. It may have been shutdown previously or never started.")
+            warnings.simplefilter("always", ResourceWarning)
+            warnings.warn(
+                f"The {self._name} subscriber is not currently running. It may have been shutdown previously or never started.",
+                ResourceWarning
+            )
+            warnings.simplefilter("default", ResourceWarning)
+            return
 
         try:
             await self._node_handle.master_proxy.unregister_publisher(
