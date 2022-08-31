@@ -15,9 +15,11 @@ from typing import (
     Dict,
     Protocol,
     TypeVar,
+    Optional,
     overload,
     runtime_checkable,
 )
+from actionlib_msgs.msg import GoalID, GoalStatus
 
 from genpy import Message as GenpyMessage
 from std_msgs.msg import Header
@@ -61,3 +63,54 @@ class ServiceMessage(Protocol[Request, Response]):
     _md5sum: str
     _request_class: type[Request]
     _response_class: type[Response]
+
+Goal = TypeVar("Goal", bound=Message)
+Feedback = TypeVar("Feedback", bound=Message)
+Result = TypeVar("Result", bound=Message)
+
+class HasGoal(Protocol[Goal]):
+    goal: Goal
+
+
+class ActionGoal(HasGoal[Goal], MessageWithHeader, Protocol, metaclass=ABCMeta):
+    goal_id: GoalID
+    goal: Goal
+
+    def __init__(
+        self,
+        header: Optional[Header] = None,
+        goal_id: Optional[GoalID] = None,
+        goal: Optional[Goal] = None,
+    ) -> None:
+        ...
+
+
+class HasResult(Protocol[Result]):
+    result: Result
+
+
+@runtime_checkable
+class ActionResult(HasResult[Result], MessageWithHeader, Protocol, metaclass=ABCMeta):
+    status: GoalStatus
+
+
+class HasFeedback(Protocol[Feedback]):
+    feedback: Feedback
+
+
+@runtime_checkable
+class ActionFeedback(HasFeedback[Feedback], MessageWithHeader, Protocol, metaclass=ABCMeta):
+    status: GoalStatus
+
+
+@runtime_checkable
+class Action(Protocol[Goal, Feedback, Result]):
+    action_goal: ActionGoal[Goal]
+    action_result: ActionResult[Result]
+    action_feedback: ActionFeedback[Feedback]
+
+@runtime_checkable
+class ActionMessage(MessageWithHeader, Protocol):
+    action_goal: MessageWithHeader
+    action_result: MessageWithHeader
+    action_feedback: MessageWithHeader

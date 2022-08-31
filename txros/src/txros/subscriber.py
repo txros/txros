@@ -200,11 +200,15 @@ class Subscriber(Generic[M]):
                             old, self._message_futs = self._message_futs, []
                             for fut in old:
                                 fut.set_result(msg)
+                    except (ConnectionRefusedError, BrokenPipeError, ConnectionResetError, asyncio.IncompleteReadError):
+                        pass
                     finally:
                         del self._connections[writer]
+                except (ConnectionRefusedError, BrokenPipeError, ConnectionResetError, asyncio.IncompleteReadError):
+                    pass
                 finally:
                     writer.close()
-            except (ConnectionRefusedError, BrokenPipeError, ConnectionResetError):
+            except (ConnectionRefusedError, BrokenPipeError, ConnectionResetError, asyncio.IncompleteReadError):
                 pass
             except Exception:
                 traceback.print_exc()

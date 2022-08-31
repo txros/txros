@@ -9,19 +9,10 @@ import genpy
 from actionlib_msgs.msg import GoalID, GoalStatus, GoalStatusArray
 from std_msgs.msg import Header
 
-from . import util
+from . import util, types
 
 if TYPE_CHECKING:
     from .nodehandle import NodeHandle
-
-
-class ActionMessage(Protocol):
-    action_goal: genpy.Message
-    action_result: genpy.Message
-    action_feedback: genpy.Message
-
-    def __call__(self) -> ActionMessage:
-        ...
 
 
 class GoalManager:
@@ -82,7 +73,7 @@ class GoalManager:
         del status
         pass  # XXX update state
 
-    def _result_callback(self, status, result):
+    def _result_callback(self, status, result: types.ActionResult):
         del status
         # XXX update state
         # XXX cancel feedback deferreds
@@ -96,10 +87,10 @@ class GoalManager:
         del status
 
         old, self._feedback_futs = self._feedback_futs, []
-        for df in old:
-            df.set_result(feedback)
+        for fut in old:
+            fut.set_result(feedback)
 
-    def get_result(self) -> asyncio.Future:
+    def get_result(self) -> asyncio.Future[types.ActionResult]:
         """
         Gets the result of the goal from the manager.
 
@@ -241,7 +232,7 @@ class SimpleActionServer:
         self,
         node_handle: NodeHandle,
         name: str,
-        action_type: ActionMessage,
+        action_type: type[types.ActionMessage],
         goal_cb: Callable | None = None,
         preempt_cb: Callable | None = None,
     ):
@@ -280,6 +271,24 @@ class SimpleActionServer:
         )
         self._cancel_sub = self._node_handle.subscribe(
             self._name + "/cancel", GoalID, self._cancel_cb
+        )
+
+    async def setup(self) -> None:
+        await asyncio.gather(
+            self._status_pub.setup(),
+            self._result_pub.setup(),
+            self._feedback_pub.setup(),
+            self._goal_sub.setup(),
+            self._cancel_sub.setup(),
+        )
+
+    async def shutdown(self) -> None:
+        await asyncio.gather(
+            self._status_pub.shutdown(),
+            self._result_pub.shutdown(),
+            self._feedback_pub.shutdown(),
+            self._goal_sub.shutdown(),
+            self._cancel_sub.shutdown(),
         )
 
     def register_goal_callback(self, func: Callable | None) -> None:
@@ -532,7 +541,7 @@ class SimpleActionServer:
 
 
 class ActionClient:
-    def __init__(self, node_handle: NodeHandle, name: str, action_type: ActionMessage):
+    def __init__(self, node_handle: NodeHandle, name: str, action_type: type[types.ActionMessage]):
         self._node_handle = node_handle
         self._name = name
         self._type = action_type
@@ -563,6 +572,15 @@ class ActionClient:
             self._status_sub.setup(),
             self._result_sub.setup(),
             self._feedback_sub.setup(),
+        )
+
+    async def shutdown(self):
+        await asyncio.gather(
+            self._goal_pub.shutdown(),
+            self._cancel_pub.shutdown(),
+            self._status_sub.shutdown(),
+            self._result_sub.shutdown(),
+            self._feedback_sub.shutdown(),
         )
 
     def _status_callback(self, msg: GoalStatusArray):
