@@ -1,11 +1,8 @@
 #!/usr/bin/python3
 
-from twisted.internet import defer
-
 import uvloop
 import asyncio
 import txros
-from txros import util
 
 from geometry_msgs.msg import PointStamped
 from roscpp.srv import GetLoggers, GetLoggersRequest

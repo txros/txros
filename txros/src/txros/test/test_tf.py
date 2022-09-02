@@ -2,7 +2,6 @@ import traceback
 
 import numpy
 import asyncio
-from twisted.internet import defer
 import unittest
 
 import genpy

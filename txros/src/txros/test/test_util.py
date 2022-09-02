@@ -1,7 +1,6 @@
 import asyncio
 import time
 
-from twisted.internet import defer, reactor
 import unittest
 
 from txros import util

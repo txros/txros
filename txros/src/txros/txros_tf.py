@@ -13,7 +13,6 @@ from geometry_msgs.msg import Transform as TransformMsg
 from geometry_msgs.msg import TransformStamped
 from tf import transformations  # XXX
 from tf2_msgs.msg import TFMessage
-from twisted.internet import defer
 
 from . import util
 

@@ -9,7 +9,6 @@ from typing import Callable, Awaitable
 
 import genpy
 from rosgraph_msgs.msg import Clock
-from twisted.internet import defer, threads
 
 from txros import NodeHandle, util
 
