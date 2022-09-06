@@ -12,8 +12,6 @@ from typing import Any, Callable, Coroutine, Iterable, Protocol, Union, TYPE_CHE
 from xmlrpc import client
 from lxml.etree import XMLParser, fromstring, tostring
 
-import aiohttp
-
 if TYPE_CHECKING:
     from .nodehandle import NodeHandle
 
@@ -133,9 +131,10 @@ class AsyncServerProxy(client.ServerProxy):
         )
 
     async def __request(self, methodname, params):
-        print(
-            f"Requesting method {methodname} with params {params} (client closed: {self.transport.session.closed})"
-        )
+        # For debugging purposes, uncommenting this line may prove to be helpful.
+        # print(
+        #     f"Requesting method {methodname} with params {params} (client closed: {self.transport.session.closed})"
+        # )
         request = client.dumps(
             params, methodname, encoding=None, allow_none=True
         ).encode()

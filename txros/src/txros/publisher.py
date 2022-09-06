@@ -95,7 +95,6 @@ class Publisher(Generic[M]):
             self.message_type._type,
             self._node_handle.xmlrpc_server_uri,
         )
-        print(f"Publisher {self._name} is now registered.")
         self._is_running = True
 
     def __del__(self):

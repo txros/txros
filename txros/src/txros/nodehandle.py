@@ -485,7 +485,6 @@ class NodeHandle:
             self.shutdown_callbacks, old = set(), self.shutdown_callbacks
             old_coros = [func() for func in old]
             for coro in old_coros:
-                print(f"Awaiting shutdown callback {coro.__name__}")
                 try:
                     await coro
                 except:
